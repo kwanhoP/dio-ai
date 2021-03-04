@@ -34,13 +34,12 @@ class TFRecordDataset:
 
     allowed_splits = ("train", "dev", "test")
 
-    def __init__(self, data_dir: Union[Path, str], split: str, random_crop_in_train: bool = True):
+    def __init__(self, data_dir: Union[Path, str], split: str):
         if split not in self.allowed_splits:
             raise ValueError(f"`split` should be one of {self.allowed_splits}")
 
         self.data_dir = Path(data_dir)
         self.split = split
-        self.random_crop_in_train = random_crop_in_train
 
     def build(
         self,
