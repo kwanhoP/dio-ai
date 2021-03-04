@@ -8,3 +8,4 @@
 2. 프로젝트 환경 구성
     - poetry 설치 (`pip3 install poetry`)
     - 디펜던시 설치 (`poetry install`)
+    - pre-commit 구성 (`pre-commit install`)
