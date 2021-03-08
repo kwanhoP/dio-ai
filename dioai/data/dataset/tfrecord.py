@@ -95,7 +95,19 @@ class TFRecordDataset:
                 )
             )
         else:
-            dataset = dataset.batch(batch_size)
+            dataset = dataset.padded_batch(
+                batch_size,
+                padded_shapes={"targets": max_length},
+                padding_values=tf.constant(0, dtype=tf.int64),
+            )
+            # `transformers.Trainer`에서는 `eval_dataset`에
+            # `__len__` 메서드를 반드시 구현하도록 강제하고 있습니다.
+            # 따라서 `torch.utils.data.DataLoader(dataset, batch_size=None)`을 사용할 수 없어
+            # `tf.data.Dataset`에 `padded_batch` -> `unbatch`를 적용한 뒤
+            # `torch.utils.data.DataLoader(dataset, batch_size=batch_size)`로 데이터를 불러옵니다.
+            # `unbatch`를 사용하지 않을 경우 `eval_dataloader`로 리턴되는 데이터는
+            # (torch.BatchSize, tf.BatchSize, SequenceLength) 형태로 리턴되어 버립니다.
+            dataset = dataset.unbatch()
 
         if training and batch_shuffle_size:
             dataset = dataset.shuffle(batch_shuffle_size)

@@ -1,10 +1,10 @@
 from multiprocessing import cpu_count
 from pathlib import Path
-from typing import Dict, Generator, Iterator, Union
+from typing import Dict, Generator, Iterator, List, Union
 
 import tensorflow as tf
 import torch
-from torch.utils.data import IterableDataset
+from torch.utils.data import Dataset, IterableDataset
 
 from .tfrecord import FeatureType, TFRecordDataset
 
@@ -51,6 +51,20 @@ class GPT2Dataset(IterableDataset):
     def __iter__(self) -> Generator[Dict[str, torch.Tensor], None, None]:
         for item in self.prepare_dataset():
             yield item
+
+    def to_eval_dataset(self) -> Dataset:
+        class EvalDataset(Dataset):
+            def __init__(self, data: List[Dict[str, torch.Tensor]]):
+                super().__init__()
+                self.dataset = data
+
+            def __getitem__(self, item: int) -> Dict[str, torch.Tensor]:
+                return self.dataset[item]
+
+            def __len__(self) -> int:
+                return len(self.dataset)
+
+        return EvalDataset(list(self.prepare_dataset()))
 
     def prepare_dataset(self) -> Iterator:
         def _prepare_inputs(_features: FeatureType) -> FeatureType:
