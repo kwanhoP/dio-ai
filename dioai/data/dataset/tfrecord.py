@@ -107,6 +107,7 @@ class TFRecordDataset:
             # `torch.utils.data.DataLoader(dataset, batch_size=batch_size)`로 데이터를 불러옵니다.
             # `unbatch`를 사용하지 않을 경우 `eval_dataloader`로 리턴되는 데이터는
             # (torch.BatchSize, tf.BatchSize, SequenceLength) 형태로 리턴되어 버립니다.
+            # 관련 이슈: https://github.com/huggingface/transformers/issues/9130
             dataset = dataset.unbatch()
 
         if training and batch_shuffle_size:

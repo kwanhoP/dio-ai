@@ -132,3 +132,8 @@ dmypy.json
 .vscode
 .DS_Store
 tmp*.py
+
+# 학습 관련
+runs/
+gpt2_config.json
+*.out

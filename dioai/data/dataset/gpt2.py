@@ -52,7 +52,7 @@ class GPT2Dataset(IterableDataset):
         for item in self.prepare_dataset():
             yield item
 
-    def to_eval_dataset(self) -> Dataset:
+    def to_dataset(self) -> Dataset:
         class EvalDataset(Dataset):
             def __init__(self, data: List[Dict[str, torch.Tensor]]):
                 super().__init__()
