@@ -53,15 +53,26 @@ class GPT2Dataset(IterableDataset):
             yield item
 
     def prepare_dataset(self) -> Iterator:
-        def _compute_attention_mask(_features: FeatureType) -> FeatureType:
-            return compute_attention_mask(_features, pad_id=self.pad_id)
+        def _prepare_inputs(_features: FeatureType) -> FeatureType:
+            return prepare_inputs(_features, pad_id=self.pad_id)
 
         tf_dataset = self.tfrecord_dataset.build(**self.tfrecord_dataset_build_args)
-        tf_dataset = tf_dataset.map(_compute_attention_mask, num_parallel_calls=self.num_threads)
+        tf_dataset = tf_dataset.map(_prepare_inputs, num_parallel_calls=self.num_threads)
         return tf_dataset.as_numpy_iterator()
 
     def __getitem__(self, index):
         pass
+
+
+def prepare_inputs(features: FeatureType, pad_id: int = 0) -> FeatureType:
+    """transformers 라이브러리 학습을 위한 데이터 입력을 준비합니다.
+    `attention_mask`와 loss 계산을 위해 필요한, `labels`를 포함한 딕셔너리를 리턴합니다.
+    `labels`는 `input_ids`와 같으며, transformers 라이브러리 내부에서 loss 계산 시 shift 됩니다.
+    """
+    result = compute_attention_mask(features, pad_id)
+    # 텐서 복사
+    result["labels"] = tf.identity(result["input_ids"])
+    return result
 
 
 def compute_attention_mask(features: FeatureType, pad_id: int = 0) -> FeatureType:

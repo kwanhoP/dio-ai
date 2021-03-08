@@ -67,6 +67,8 @@ class TFRecordDataset:
 
         dataset = tf.data.TFRecordDataset(files)
         dataset = dataset.map(self.decode_example, num_parallel_calls=num_threads)
+        dataset = dataset.map(int_to_int64, num_parallel_calls=num_threads)
+        dataset = dataset.map(to_dense, num_parallel_calls=num_threads)
         if preprocess:
             dataset = self.preprocess(
                 dataset,
@@ -78,8 +80,6 @@ class TFRecordDataset:
             dataset = dataset.shuffle(shuffle_buffer_size)
         if training:
             dataset = dataset.repeat()
-        dataset = dataset.map(int_to_int32, num_parallel_calls=num_threads)
-        dataset = dataset.map(to_dense, num_parallel_calls=num_threads)
         dataset = dataset.filter(valid_size(min_length, max_length))
 
         if bucket_by_sequence:
@@ -174,11 +174,14 @@ def valid_size(min_length: int, max_length: int) -> Callable[[FeatureType], bool
     return _valid_size
 
 
-def int_to_int32(features: FeatureType) -> FeatureType:
+def int_to_int64(features: FeatureType) -> FeatureType:
+    """`tf.int32`, `tf.uint8` 데이터 타입을 `tf.int64` 타입으로 변경합니다.
+    transformers (pytorch)에서 int64 타입을 사용하기 때문에, 그에 맞춰 `tf.int64`으로 변경합니다.
+    """
     result = dict()
     for key, value in features.items():
-        if value.dtype in (tf.int64, tf.uint8):
-            value = tf.cast(value, tf.int32)
+        if value.dtype in (tf.int32, tf.uint8):
+            value = tf.cast(value, tf.int64)
         result[key] = value
     return result
 

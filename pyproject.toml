@@ -18,6 +18,8 @@ torchvision = [
     {version = "0.8.2", markers = "sys_platform == 'darwin'"}
 ]
 torchaudio = "0.7.2"
+transformers = "^4.3.3"
+tensorboard = "^2.4.1"
 
 [tool.poetry.dev-dependencies]
 pre-commit = "^2.10.0"
