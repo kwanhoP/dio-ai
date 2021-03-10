@@ -27,7 +27,7 @@ class BatchingSchemeArgs:
     min_length: int = field(default=0)
 
 
-class TFRecordDataset:
+class MagentaTFRecordDataset:
     """Magenta (Tensor2Tensor)를 사용해 제작된 tfrecord 파일을 읽기 위한 객체.
     `tf.train.Example` 형식으로 저장된 tfrecord 파일을 읽습니다.
     """
@@ -54,7 +54,7 @@ class TFRecordDataset:
         batch_shuffle_size: int = 512,
         shuffle_buffer_size: int = 10000,
         num_threads: int = cpu_count(),
-        **batching_scheme_kwargs,
+        batching_scheme_args: Optional[BatchingSchemeArgs] = None,
     ) -> tf.data.Dataset:
         files = [
             str(filename) for filename in self.data_dir.rglob("**/*") if self.split in filename.name
@@ -83,8 +83,8 @@ class TFRecordDataset:
         dataset = dataset.filter(valid_size(min_length, max_length))
 
         if bucket_by_sequence:
-            batching_scheme_args = BatchingSchemeArgs(
-                **{**batching_scheme_kwargs, "min_length": min_length, "max_length": max_length}
+            batching_scheme_args = batching_scheme_args or BatchingSchemeArgs(
+                min_length=min_length, max_length=max_length
             )
             scheme = batching_scheme(**asdict(batching_scheme_args))
             dataset = dataset.apply(

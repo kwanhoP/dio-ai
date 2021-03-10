@@ -4,11 +4,12 @@ from dataclasses import dataclass
 from pathlib import Path
 
 import tensorflow as tf
-from transformers import EvaluationStrategy, GPT2Config, GPT2LMHeadModel
+from transformers import EvaluationStrategy, GPT2Config
 from transformers import Trainer as _Trainer
 from transformers import TrainingArguments
 
-from dioai.data.dataset.gpt2 import GPT2Dataset
+from dioai.data.dataset import PozalabsDatasetFactory
+from dioai.model import PozalabsModelFactory
 from dioai.trainer import Trainer
 
 
@@ -40,6 +41,7 @@ def get_parser() -> argparse.ArgumentParser:
     parser.add_argument("--eval_steps", type=int, default=1000, help="평가 수행 스텝 주기")
     parser.add_argument("--per_device_eval_batch_size", type=int, default=8, help="GPU별 배치 사이즈")
     parser.add_argument("--logging_steps", type=int, default=100, help="학습 현황 로깅 스텝 주기")
+    parser.add_argument("--model_name", type=str, default="gpt2_base", help="모델 이름")
     parser.add_argument(
         "--resume_training",
         type=bool_str,
@@ -69,14 +71,19 @@ def main(args):
 
     model_config = load_model_config(model_config_path)
 
-    train_dataset = GPT2Dataset(
+    model_name = args.model_name
+    dataset_factory = PozalabsDatasetFactory()
+
+    train_dataset = dataset_factory.create(
+        name=model_name,
         data_dir=data_dir,
         split=args.train_split,
         min_length=model_config.min_length,
         max_length=model_config.n_ctx,
         shuffle=True,
     )
-    eval_dataset = GPT2Dataset(
+    eval_dataset = dataset_factory.create(
+        name=model_name,
         data_dir=data_dir,
         split=args.eval_split,
         min_length=model_config.min_length,
@@ -84,7 +91,7 @@ def main(args):
         shuffle=False,
         training=False,
         bucket_by_sequence=False,
-    ).to_dataset()
+    )
 
     config = GPT2Config(
         vocab_size=model_config.n_vocab,
@@ -93,7 +100,8 @@ def main(args):
         n_head=model_config.n_head,
         n_layer=model_config.n_layer,
     )
-    model = GPT2LMHeadModel(config)
+    model_factory = PozalabsModelFactory()
+    model = model_factory.create(model_name, config)
 
     training_args = TrainingArguments(
         output_dir,

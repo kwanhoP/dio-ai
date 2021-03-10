@@ -1,15 +1,17 @@
 from multiprocessing import cpu_count
 from pathlib import Path
-from typing import Dict, Generator, Iterator, List, Union
+from typing import Dict, Generator, Iterator, List, Optional, Union
 
 import tensorflow as tf
 import torch
 from torch.utils.data import Dataset, IterableDataset
 
-from .tfrecord import FeatureType, TFRecordDataset
+from .magenta_tfrecord import BatchingSchemeArgs, FeatureType, MagentaTFRecordDataset
 
 
-class GPT2Dataset(IterableDataset):
+class GPT2BaseDataset(IterableDataset):
+    name = "gpt2_base"
+
     def __init__(
         self,
         data_dir: Union[str, Path],
@@ -26,13 +28,14 @@ class GPT2Dataset(IterableDataset):
         shuffle_buffer_size: int = 10000,
         num_threads: int = cpu_count(),
         pad_id: int = 0,
-        **batching_scheme_kwargs,
+        batching_scheme_args: Optional[BatchingSchemeArgs] = None,
     ):
         super().__init__()
 
         self.num_threads = num_threads
         self.pad_id = pad_id
-        self.tfrecord_dataset = TFRecordDataset(data_dir, split)
+        self.training = training
+        self.tfrecord_dataset = MagentaTFRecordDataset(data_dir, split)
         self.tfrecord_dataset_build_args = dict(
             min_length=min_length,
             max_length=max_length,
@@ -45,8 +48,13 @@ class GPT2Dataset(IterableDataset):
             batch_shuffle_size=batch_shuffle_size,
             shuffle_buffer_size=shuffle_buffer_size,
             num_threads=num_threads,
-            **batching_scheme_kwargs,
+            batching_scheme_args=batching_scheme_args,
         )
+
+    def build(self) -> Union[IterableDataset, Dataset]:
+        if self.training:
+            return self
+        return self.to_dataset()
 
     def __iter__(self) -> Generator[Dict[str, torch.Tensor], None, None]:
         for item in self.prepare_dataset():
