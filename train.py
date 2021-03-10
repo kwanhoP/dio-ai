@@ -2,6 +2,7 @@ import argparse
 import json
 from dataclasses import dataclass
 from pathlib import Path
+from typing import Union
 
 import tensorflow as tf
 from transformers import EvaluationStrategy, GPT2Config
@@ -48,12 +49,35 @@ def get_parser() -> argparse.ArgumentParser:
         default=False,
         help="학습 재개 여부. `output_dir`에 이전 체크포인트가 있어야 합니다.",
     )
+    parser.add_argument("--save_total_limit", type=int, default=10, help="저장할 최대 체크포인트 개수")
+    parser.add_argument(
+        "--logging_dir",
+        type=str,
+        default=str,
+        help="텐서보드 로깅 디레토리. 기본값은 ${PWD}/runs/**CURRENT_DATETIME_HOSTNAME**",
+    )
     return parser
 
 
 def load_model_config(config_path) -> ModelConfig:
     with open(config_path, "r") as f_in:
         return ModelConfig(**json.load(f_in))
+
+
+def find_latest_checkpoint(checkpoint_dir: Union[str, Path]) -> str:
+    def _sort_by_checkpoint(_p: Path) -> int:
+        return int(_p.stem.split("-")[-1])
+
+    # 체크포인트는 `checkpoint-{step}`으로 저장됨
+    sorted_checkpoints = sorted(
+        (
+            dir_name
+            for dir_name in Path(checkpoint_dir).iterdir()
+            if dir_name.is_dir() and dir_name.stem.startswith("checkpoint")
+        ),
+        key=_sort_by_checkpoint,
+    )
+    return str(sorted_checkpoints[-1])
 
 
 def main(args):
@@ -111,12 +135,16 @@ def main(args):
         eval_steps=args.eval_steps,
         per_device_eval_batch_size=args.per_device_eval_batch_size,
         logging_steps=args.logging_steps,
+        save_total_limit=args.save_total_limit,
+        logging_dir=args.logging_dir,
     )
 
     trainer: _Trainer = Trainer(
         model=model, args=training_args, train_dataset=train_dataset, eval_dataset=eval_dataset
     )
-    trainer.train(resume_from_checkpoint=args.resume_training if args.resume_training else None)
+    trainer.train(
+        resume_from_checkpoint=find_latest_checkpoint(output_dir) if args.resume_training else None
+    )
 
 
 if __name__ == "__main__":
