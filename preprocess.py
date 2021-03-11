@@ -1,8 +1,10 @@
 # 미디 전처리 스크립트 (midi -> tfrecord)
 
 import argparse
+import os
 
 from dioai.preprocessor.chunk_midi import chunk_midi
+from dioai.preprocessor.extract_info import MetaExtractor
 
 
 def get_parser() -> argparse.ArgumentParser:
@@ -38,27 +40,50 @@ def get_parser() -> argparse.ArgumentParser:
         required=True,
         help="전처리 후 만들어진 각 chunk 는 하나의 midi파일로 저장되는데, 이러한 midi 파일들이 저장되는 폴더",
     )
+    parser.add_argument(
+        "--after_chunked",
+        type=bool,
+        default=False,
+        help="chunked 이후 과정만 할 때, --chunk_midi_dir을 대상으로 인코딩 진행",
+    )
     return parser
 
 
 def main(args):
-    # how to devide one second. should be 10 or 100 or 1000
+    # args
     STEPS_PER_SEC = args.steps_per_sec
-    # longest allowed space in a chunk, in second
     LONGEST_ALLOWED_SPACE = args.longest_allowed_space
-    # minimum possible midi chunk, in second
     MINIMUM_CHUNK_LENGTH = args.minimum_chunk_length
 
     midi_dataset_path = args.source_midi_dir
     chunked_midi_path = args.chunk_midi_dir
+    after_chunked = args.after_chunked
 
-    return chunk_midi(
-        steps_per_sec=STEPS_PER_SEC,
-        longest_allowed_space=LONGEST_ALLOWED_SPACE,
-        minimum_chunk_length=MINIMUM_CHUNK_LENGTH,
-        midi_dataset_path=midi_dataset_path,
-        chunked_midi_path=chunked_midi_path,
-    )
+    # chunk
+    if not after_chunked:
+        chunk_midi(
+            steps_per_sec=STEPS_PER_SEC,
+            longest_allowed_space=LONGEST_ALLOWED_SPACE,
+            minimum_chunk_length=MINIMUM_CHUNK_LENGTH,
+            midi_dataset_path=midi_dataset_path,
+            chunked_midi_path=chunked_midi_path,
+        )
+
+    # extract & encode
+    chunked_midi = []
+
+    for _, (dirpath, _, filenames) in enumerate(os.walk(chunked_midi_path)):
+        fileExt = [".mid", ".MID", ".MIDI", ".midi"]
+        for Ext in fileExt:
+            tem = [os.path.join(dirpath, _) for _ in filenames if _.endswith(Ext)]
+            if tem:
+                chunked_midi += tem
+
+    for midi_file in chunked_midi:
+        metadata = MetaExtractor(
+            pth=midi_file, keyswitch_velocity=1, default_pitch_range="mid"
+        ).parse()
+        print(metadata)
 
 
 if __name__ == "__main__":

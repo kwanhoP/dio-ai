@@ -1,6 +1,4 @@
 import os
-from glob import glob
-from os.path import join
 
 import numpy as np
 import pretty_midi
@@ -55,15 +53,13 @@ def chunk_midi(
         127,
     ]
     midifiles = []
-    for x in os.walk(midi_dataset_path):
-        for y in glob(join(x[0], "*.mid")):
-            midifiles.append(y)
-        for y in glob(join(x[0], "*.MID")):
-            midifiles.append(y)
-        for y in glob(join(x[0], "*.midi")):
-            midifiles.append(y)
-        for y in glob(join(x[0], "*.MIDI")):
-            midifiles.append(y)
+
+    for i, (dirpath, _, filenames) in enumerate(os.walk(midi_dataset_path)):
+        fileExt = [".mid", ".MID", ".MIDI", ".midi"]
+        for Ext in fileExt:
+            tem = [os.path.join(dirpath, _) for _ in filenames if _.endswith(Ext)]
+            if tem:
+                midifiles += tem
 
     for file_idx, filename in enumerate(midifiles):
         print(f"{file_idx}th file, filename: {filename}")

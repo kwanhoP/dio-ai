@@ -9,24 +9,19 @@ import mido
 import numpy as np
 import pretty_midi
 
+from .constants import (
+    CHORD_TRACK_NAME,
+    CHORD_TYPE_IDX,
+    DEFAULT_NUM_BEATS,
+    DEFAULT_PITCH_RANGE,
+    MINOR_KEY,
+    NO_META_MESSAGE,
+    PITCH_RANGE_CUT,
+    PITCH_RANGE_MAP,
+    PROGRAM_INST_MAP,
+    UNKNOWN,
+)
 from .exceptions import InvalidMidiError, InvalidMidiErrorMessage
-
-DEFAULT_NUM_BEATS = 4
-CHORD_TRACK_NAME = "chord"
-PITCH_RANGE_CUT = {
-    "very_low": 36,
-    "low": 48,
-    "mid_low": 60,
-    "mid": 72,
-    "mid_high": 84,
-    "high": 96,
-    "very_high": 108,
-}
-DEFAULT_PITCH_RANGE = "mid"
-CHORD_TYPE_IDX = -1
-MINOR_KEY = "m"
-NO_META_MESSAGE = "no_info"
-UNKNOWN = "unknown"
 
 
 class ChordType(str, enum.Enum):
@@ -36,6 +31,20 @@ class ChordType(str, enum.Enum):
     @classmethod
     def values(cls) -> List[str]:
         return list(cls.__members__.values())
+
+
+def get_inst_from_midi(midi_path: Union[str, Path]) -> int:
+    """
+    미디 program num을 poza 악기 분류로 mapping 하는 함수
+    0: 건반악기, 1: 리드악기, 2: 체명악기, 3: 발현악기, 4: 현악기
+    5: 금관악기, 6: 목관악기, 7: 기타, 8: 신스악기, 9: 타악기
+    """
+    midi_data = pretty_midi.PrettyMIDI(midi_path)
+    if not midi_data.instruments:
+        return UNKNOWN
+    else:
+        pro_num = midi_data.instruments[0].program
+        return PROGRAM_INST_MAP[str(pro_num)]
 
 
 def get_num_measures_from_midi(
@@ -51,26 +60,29 @@ def get_num_measures_from_midi(
                 return t
 
     pt_midi = pretty_midi.PrettyMIDI(str(midi_path))
-    time_signature: pretty_midi.TimeSignature = pt_midi.time_signature_changes[-1]
+    if not pt_midi.instruments:
+        return UNKNOWN
+    else:
+        time_signature: pretty_midi.TimeSignature = pt_midi.time_signature_changes[-1]
 
-    coordination = time_signature.numerator / time_signature.denominator
-    ticks_per_measure = pt_midi.resolution * DEFAULT_NUM_BEATS * coordination
+        coordination = time_signature.numerator / time_signature.denominator
+        ticks_per_measure = pt_midi.resolution * DEFAULT_NUM_BEATS * coordination
 
-    track = _get_track(pt_midi.instruments)
-    if track is None:
-        raise InvalidMidiError(InvalidMidiErrorMessage.chord_track_not_found.value)
+        track = _get_track(pt_midi.instruments)
+        if track is []:
+            raise InvalidMidiError(InvalidMidiErrorMessage.chord_track_not_found.value)
 
-    notes = track.notes
+        notes = track.notes
 
-    # 노트가 시작하는 마디
-    start_measure = pt_midi.time_to_tick(notes[0].start) // ticks_per_measure
-    measure_start_tick = int(start_measure * ticks_per_measure)
-    duration_tick = pt_midi.time_to_tick(notes[-1].end) - measure_start_tick
-    return math.ceil(duration_tick / ticks_per_measure)
+        # 노트가 시작하는 마디
+        start_measure = pt_midi.time_to_tick(notes[0].start) // ticks_per_measure
+        measure_start_tick = int(start_measure * ticks_per_measure)
+        duration_tick = pt_midi.time_to_tick(notes[-1].end) - measure_start_tick
+        return math.ceil(duration_tick / ticks_per_measure)
 
 
 def get_pitch_range(midi_obj: mido.MidiFile, keyswitch_velocity: int) -> str:
-    """미디의 피치 범위를 계산합니다. 메타/코드 트랙, 키스위치에 해당하는 노트는 계산에서 제외합니다.
+    """미디의 피치 범위를 계산하고 인코딩합니다. 메타/코드 트랙, 키스위치에 해당하는 노트는 계산에서 제외합니다.
 
     Args:
         midi_obj: `mido.MidiFile`. mido.MidiFile 객체
@@ -88,13 +100,20 @@ def get_pitch_range(midi_obj: mido.MidiFile, keyswitch_velocity: int) -> str:
                 if event.pitch != 0 and event.velocity != keyswitch_velocity:
                     total += event.pitch
                     count += 1
-        return total / count
+        if count == 0:
+            return UNKNOWN
+        else:
+            return total / count
 
     def _get_pitch_range(avg_pitch_range):
-        indexer = {i: k for i, k in enumerate(PITCH_RANGE_CUT.keys())}
-        bins = list(PITCH_RANGE_CUT.values())
-        digitizer = functools.partial(np.digitize, bins=bins)
-        return indexer[digitizer(avg_pitch_range)]
+        if avg_pitch_range == UNKNOWN:
+            range = DEFAULT_PITCH_RANGE
+        else:
+            indexer = {i: k for i, k in enumerate(PITCH_RANGE_CUT.keys())}
+            bins = list(PITCH_RANGE_CUT.values())
+            digitizer = functools.partial(np.digitize, bins=bins)
+            range = indexer[digitizer(avg_pitch_range)]
+        return PITCH_RANGE_MAP[range]
 
     with tempfile.NamedTemporaryFile(suffix=".mid") as f:
         midi_obj.save(filename=f.name)
@@ -113,10 +132,16 @@ def get_time_signature(meta_message: mido.MetaMessage) -> Union[mido.MetaMessage
 
 
 def get_bpm(meta_message: mido.MetaMessage) -> Union[mido.MetaMessage, str]:
-    """미디의 bpm을 추출합니다."""
+    """미디의 bpm을 추출하여 5단위로 인코딩 합니다."""
+    bpm = round(mido.tempo2bpm(getattr(meta_message, "tempo")))
+
     if isinstance(meta_message, str):
         return UNKNOWN
-    return round(mido.tempo2bpm(getattr(meta_message, "tempo")))
+
+    if bpm == 200:
+        return 39
+    else:
+        return bpm // 5
 
 
 def get_key_chord_type(

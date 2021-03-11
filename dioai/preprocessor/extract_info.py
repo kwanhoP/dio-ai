@@ -4,6 +4,7 @@ import mido
 
 from .utils import (
     get_bpm,
+    get_inst_from_midi,
     get_key_chord_type,
     get_meta_message,
     get_num_measures_from_midi,
@@ -33,6 +34,7 @@ class MetaExtractor:
         - time_signature
         - pitch_range
         - num_measure
+        - inst
     """
 
     def __init__(
@@ -44,12 +46,13 @@ class MetaExtractor:
         """
 
         Args:
-            midi: `str`. 파싱할 미디 path
+            pth: `str`. 파싱할 미디 path
             keyswitch_velocity: `int`. pitch range 검사에서 제외할 keyswitch velocity
             default_pitch_range: `str`. 모든 노트의 velocity 가 keyswitch velocity 라서
                         pitch range를 검사할 수 없을 경우 사용할 기본 pitch range
 
         """
+
         self._midi = mido.MidiFile(pth)
         self.keyswitch_velocity = keyswitch_velocity
         self.default_pitch_range = default_pitch_range
@@ -66,4 +69,5 @@ class MetaExtractor:
             time_signature=get_time_signature(get_meta_message(meta_track, "time_signature")),
             pitch_range=get_pitch_range(self._midi, self.keyswitch_velocity),
             num_measure=get_num_measures_from_midi(self.path),
+            inst=get_inst_from_midi(self.path),
         )
