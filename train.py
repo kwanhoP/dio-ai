@@ -53,7 +53,6 @@ def get_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--logging_dir",
         type=str,
-        default=str,
         help="텐서보드 로깅 디레토리. 기본값은 ${PWD}/runs/**CURRENT_DATETIME_HOSTNAME**",
     )
     return parser
