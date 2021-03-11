@@ -1,7 +1,10 @@
 import os
 
+import mido
 import numpy as np
 import pretty_midi
+
+from .constants import INSTRUMENT_NOT_FOR_MELODY
 
 
 def chunk_midi(
@@ -26,32 +29,6 @@ def chunk_midi(
     TRUNCATE_UNDER_NTH_DECIMAL = len(str(steps_per_sec)) - 1  # 소수점 아래 몇 자리 이후를 버릴지
     STEP_IN_SEC = _truncate(1.0 / steps_per_sec, TRUNCATE_UNDER_NTH_DECIMAL, dtype="float")
     # Remove drum, FX, woodblock, gunshot, ... among midi instruments
-    Instrument_Not_For_Melody = [
-        55,
-        96,
-        97,
-        98,
-        99,
-        100,
-        101,
-        102,
-        103,
-        113,
-        114,
-        115,
-        116,
-        117,
-        118,
-        119,
-        120,
-        121,
-        122,
-        123,
-        124,
-        125,
-        126,
-        127,
-    ]
     midifiles = []
 
     for i, (dirpath, _, filenames) in enumerate(os.walk(midi_dataset_path)):
@@ -69,11 +46,24 @@ def chunk_midi(
             print("pretty_midi로 읽을 수 있는 형식의 mid 데이터가 아닙니다.")
             continue
 
+        # Get Average Tempo
+        event_times, tempo_infos = midi_data.get_tempo_changes()
+        total_tempo = 0
+        for i, cur_tempo in enumerate(tempo_infos):
+            if i == 0:
+                prev_tempo = cur_tempo
+                continue
+            tempo_duration = event_times[i] - event_times[i - 1]
+            total_tempo += tempo_duration * prev_tempo
+            prev_tempo = cur_tempo
+
+        average_tempo = int(total_tempo / event_times[-1])
+
         # First, remove instrument track not necessary for generating melody
         instrument_idx_to_remove = []
         for inst_idx, instrument in enumerate(midi_data.instruments):
             # if instrument is drum or not suitable for melody
-            if instrument.is_drum or instrument.program in Instrument_Not_For_Melody:
+            if instrument.is_drum or instrument.program in INSTRUMENT_NOT_FOR_MELODY:
                 instrument_idx_to_remove.append(inst_idx)
             # if instrument has no notes in it, remove too.
             if not instrument.notes:
@@ -168,6 +158,25 @@ def chunk_midi(
                 new_midi_object.instruments.append(new_instrument)
                 filename_without_extension = os.path.splitext(filename.split("/")[-1])[0]
                 new_midi_object.write(
+                    os.path.join(
+                        chunked_midi_path,
+                        filename_without_extension + f"_{inst_idx}_{instrument.program}_{i}.mid",
+                    )
+                )
+
+                # pretty_midi에서 Tempo의 반영이 안되어, mido를 통한 Tempo 반영
+                midi_object = mido.MidiFile(
+                    os.path.join(
+                        chunked_midi_path,
+                        filename_without_extension + f"_{inst_idx}_{instrument.program}_{i}.mid",
+                    )
+                )
+                for track in midi_object.tracks:
+                    for message in track:
+                        if message.type == "set_tempo":
+                            message.tempo = mido.bpm2tempo(average_tempo)
+
+                midi_object.save(
                     os.path.join(
                         chunked_midi_path,
                         filename_without_extension + f"_{inst_idx}_{instrument.program}_{i}.mid",
