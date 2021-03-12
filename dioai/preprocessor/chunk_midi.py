@@ -6,6 +6,9 @@ import pretty_midi
 
 from .constants import INSTRUMENT_NOT_FOR_MELODY
 
+# Tempo, Key, Time Signature가 너무 자주 바뀌는 경우는 학습에 이용하지 않음
+MAXIMUM_CHANGE = 8
+
 
 def chunk_midi(
     steps_per_sec, longest_allowed_space, minimum_chunk_length, midi_dataset_path, chunked_midi_path
@@ -48,6 +51,11 @@ def chunk_midi(
 
         # Get Average Tempo
         event_times, tempo_infos = midi_data.get_tempo_changes()
+
+        if len(event_times) > MAXIMUM_CHANGE:
+            print(filename, "은 너무 많은 템포 변화를 가지고 있습니다.")
+            continue
+
         total_tempo = 0
         for i, cur_tempo in enumerate(tempo_infos):
             if i == 0:
@@ -57,7 +65,15 @@ def chunk_midi(
             total_tempo += tempo_duration * prev_tempo
             prev_tempo = cur_tempo
 
-        average_tempo = int(total_tempo / event_times[-1])
+        if midi_data.get_end_time() == 0:
+            continue
+        tempo_duration = midi_data.get_end_time() - event_times[i]
+        total_tempo += tempo_duration * prev_tempo
+
+        if total_tempo == 0:
+            average_tempo = cur_tempo
+        else:
+            average_tempo = int(total_tempo / midi_data.get_end_time())
 
         # First, remove instrument track not necessary for generating melody
         instrument_idx_to_remove = []
@@ -153,6 +169,22 @@ def chunk_midi(
 
             for i, notes in enumerate(new_notes_per_instrument):
                 new_midi_object = pretty_midi.PrettyMIDI()
+
+                ks_list = midi_data.key_signature_changes
+                ts_list = midi_data.time_signature_changes
+
+                if len(ks_list) > MAXIMUM_CHANGE or len(ts_list) > MAXIMUM_CHANGE:
+                    print(filename, "은 너무 많은 키 혹은 박자 변화를 가지고 있습니다.")
+                    break
+
+                if ks_list:  # ks 가 변화하지 않는 경우 default값으로 설정 필요
+                    for ks in ks_list:
+                        new_midi_object.key_signature_changes.append(ks)
+
+                if ts_list:  # ts 가 변화하지 않는 경우 default값으로 설정 필요
+                    for ts in ts_list:
+                        new_midi_object.time_signature_changes.append(ts)
+
                 new_instrument = pretty_midi.Instrument(program=instrument.program)
                 new_instrument.notes = notes
                 new_midi_object.instruments.append(new_instrument)
