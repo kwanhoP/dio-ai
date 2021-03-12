@@ -41,6 +41,12 @@ def get_parser() -> argparse.ArgumentParser:
         help="전처리 후 만들어진 각 chunk 는 하나의 midi파일로 저장되는데, 이러한 midi 파일들이 저장되는 폴더",
     )
     parser.add_argument(
+        "--tmp_midi_dir",
+        type=str,
+        required=True,
+        help="미디 파일의 Tempo가 달라지는 경우 노트가 밀리는 현상 해결을 위해 평균 Tempo값으로 고정되어 저장되는 폴더",
+    )
+    parser.add_argument(
         "--after_chunked",
         type=bool,
         default=False,
@@ -58,7 +64,7 @@ def main(args):
     midi_dataset_path = args.source_midi_dir
     chunked_midi_path = args.chunk_midi_dir
     after_chunked = args.after_chunked
-
+    tmp_midi_dir = args.tmp_midi_dir
     # chunk
     if not after_chunked:
         chunk_midi(
@@ -67,6 +73,7 @@ def main(args):
             minimum_chunk_length=MINIMUM_CHUNK_LENGTH,
             midi_dataset_path=midi_dataset_path,
             chunked_midi_path=chunked_midi_path,
+            tmp_midi_dir=tmp_midi_dir,
         )
 
     # extract & encode

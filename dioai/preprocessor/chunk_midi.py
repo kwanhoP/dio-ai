@@ -11,7 +11,12 @@ MAXIMUM_CHANGE = 8
 
 
 def chunk_midi(
-    steps_per_sec, longest_allowed_space, minimum_chunk_length, midi_dataset_path, chunked_midi_path
+    steps_per_sec,
+    longest_allowed_space,
+    minimum_chunk_length,
+    midi_dataset_path,
+    chunked_midi_path,
+    tmp_midi_dir,
 ) -> None:
     def _truncate(f: float, n: int, dtype="str") -> float:
         """Truncates/pads a float f to n decimal places without rounding"""
@@ -67,6 +72,7 @@ def chunk_midi(
 
         if midi_data.get_end_time() == 0:
             continue
+
         tempo_duration = midi_data.get_end_time() - event_times[i]
         total_tempo += tempo_duration * prev_tempo
 
@@ -74,6 +80,25 @@ def chunk_midi(
             average_tempo = cur_tempo
         else:
             average_tempo = int(total_tempo / midi_data.get_end_time())
+
+        del midi_data
+
+        filename_without_extension = os.path.splitext(filename.split("/")[-1])[0]
+
+        # set default
+        # pretty_midi에서 Tempo의 반영이 안되어, mido를 통한 Tempo 반영
+        mido_object = mido.MidiFile(filename)
+        for track in mido_object.tracks:
+            for message in track:
+                if message.type == "set_tempo":
+                    message.tempo = mido.bpm2tempo(average_tempo)
+
+        mido_object.save(
+            os.path.join(tmp_midi_dir, filename_without_extension + f"_{average_tempo}.mid")
+        )
+        midi_data = pretty_midi.PrettyMIDI(
+            os.path.join(tmp_midi_dir, filename_without_extension + f"_{average_tempo}.mid")
+        )
 
         # First, remove instrument track not necessary for generating melody
         instrument_idx_to_remove = []
@@ -190,27 +215,7 @@ def chunk_midi(
                 new_instrument = pretty_midi.Instrument(program=instrument.program)
                 new_instrument.notes = notes
                 new_midi_object.instruments.append(new_instrument)
-                filename_without_extension = os.path.splitext(filename.split("/")[-1])[0]
                 new_midi_object.write(
-                    os.path.join(
-                        chunked_midi_path,
-                        filename_without_extension + f"_{inst_idx}_{instrument.program}_{i}.mid",
-                    )
-                )
-
-                # pretty_midi에서 Tempo의 반영이 안되어, mido를 통한 Tempo 반영
-                midi_object = mido.MidiFile(
-                    os.path.join(
-                        chunked_midi_path,
-                        filename_without_extension + f"_{inst_idx}_{instrument.program}_{i}.mid",
-                    )
-                )
-                for track in midi_object.tracks:
-                    for message in track:
-                        if message.type == "set_tempo":
-                            message.tempo = mido.bpm2tempo(average_tempo)
-
-                midi_object.save(
                     os.path.join(
                         chunked_midi_path,
                         filename_without_extension + f"_{inst_idx}_{instrument.program}_{i}.mid",
