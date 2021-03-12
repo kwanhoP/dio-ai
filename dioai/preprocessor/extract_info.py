@@ -14,7 +14,8 @@ from .utils import (
 
 
 @dataclass
-class MidiMeta:
+class MidiInfo:
+    # meta
     bpm: int
     audio_key: str
     chord_type: str
@@ -23,11 +24,18 @@ class MidiMeta:
     num_measure: int
     inst: int
 
+    # note
+    note_on: int
+    note_off: int
+    time_shift: int
+    note_vel: int
 
-class MetaExtractor:
-    """미디 메타 정보를 추출합니다.
+
+class MidiExtractor:
+    """미디 정보를 추출합니다.
 
     파싱되는 정보:
+        # meta
         - bpm
         - audio_key
         - chord_type
@@ -35,6 +43,12 @@ class MetaExtractor:
         - pitch_range
         - num_measure
         - inst
+
+        # note
+        - note_on
+        - note_off
+        - time_shift
+        - note_vel
     """
 
     def __init__(
@@ -58,11 +72,11 @@ class MetaExtractor:
         self.default_pitch_range = default_pitch_range
         self.path = pth
 
-    def parse(self) -> MidiMeta:
+    def parse(self) -> MidiInfo:
         meta_track = self._midi.tracks[0]
         audio_key, chord_type = get_key_chord_type(get_meta_message(meta_track, "key_signature"))
 
-        return MidiMeta(
+        return MidiInfo(
             bpm=get_bpm(get_meta_message(meta_track, "set_tempo")),
             audio_key=audio_key,
             chord_type=chord_type,

@@ -4,7 +4,7 @@ import argparse
 import os
 
 from dioai.preprocessor.chunk_midi import chunk_midi
-from dioai.preprocessor.extract_info import MetaExtractor
+from dioai.preprocessor.extract_info import MidiExtractor
 
 
 def get_parser() -> argparse.ArgumentParser:
@@ -87,7 +87,7 @@ def main(args):
                 chunked_midi += tem
 
     for midi_file in chunked_midi:
-        metadata = MetaExtractor(
+        metadata = MidiExtractor(
             pth=midi_file, keyswitch_velocity=1, default_pitch_range="mid"
         ).parse()
         print(metadata)
