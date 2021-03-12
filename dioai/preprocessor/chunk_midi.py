@@ -168,7 +168,9 @@ def chunk_midi(
                                 break
 
             for i, notes in enumerate(new_notes_per_instrument):
-                new_midi_object = pretty_midi.PrettyMIDI()
+                new_midi_object = pretty_midi.PrettyMIDI(
+                    resolution=midi_data.resolution, initial_tempo=average_tempo
+                )
 
                 ks_list = midi_data.key_signature_changes
                 ts_list = midi_data.time_signature_changes
