@@ -16,11 +16,13 @@ from .constants import (
     CHORD_TYPE_IDX,
     DEFAULT_NUM_BEATS,
     DEFAULT_PITCH_RANGE,
+    KEY_MAP,
     MINOR_KEY,
     NO_META_MESSAGE,
     PITCH_RANGE_CUT,
     PITCH_RANGE_MAP,
     PROGRAM_INST_MAP,
+    TIME_SIG_MAP,
     UNKNOWN,
 )
 from .exceptions import InvalidMidiError, InvalidMidiErrorMessage
@@ -203,7 +205,8 @@ def get_time_signature(meta_message: mido.MetaMessage) -> Union[mido.MetaMessage
         return UNKNOWN
 
     attrs = ("numerator", "denominator")
-    return "/".join(str(getattr(meta_message, attr)) for attr in attrs)
+    time_sig = "/".join(str(getattr(meta_message, attr)) for attr in attrs)
+    return TIME_SIG_MAP[time_sig]
 
 
 def get_bpm(meta_message: mido.MetaMessage) -> Union[mido.MetaMessage, str]:
@@ -229,8 +232,8 @@ def get_key_chord_type(
 
     def _divide_key_chord_type(_ks, major):
         if major:
-            return _ks, ChordType.MAJOR.value
-        return _ks[:CHORD_TYPE_IDX], ChordType.MINOR.value
+            return KEY_MAP[_ks + ChordType.MAJOR.value]
+        return KEY_MAP[_ks[:CHORD_TYPE_IDX] + ChordType.MINOR.value]
 
     if isinstance(meta_message, str):
         key_signature = UNKNOWN

@@ -15,6 +15,50 @@ MINOR_KEY = "m"
 NO_META_MESSAGE = "no_info"
 UNKNOWN = "unknown"
 
+TIME_SIG_MAP = {
+    "3/2": 0,
+    "4/2": 1,
+    "2/4": 2,
+    "3/4": 3,
+    "4/4": 4,
+    "5/4": 5,
+    "6/4": 6,
+    "7/4": 7,
+    "9/4": 8,
+    "12/4": 9,
+    "3/8": 10,
+    "6/8": 11,
+    "7/8": 12,
+    "9/8": 13,
+    "12/8": 14,
+}
+
+KEY_MAP = {
+    "cmajor": 0,
+    "c#major": 1,
+    "dmajor": 2,
+    "d#major": 3,
+    "emajor": 4,
+    "fmajor": 5,
+    "f#major": 6,
+    "gmajor": 7,
+    "g#major": 8,
+    "amajor": 9,
+    "bbmajor": 10,
+    "bmajor": 11,
+    "cminor": 12,
+    "c#minor": 13,
+    "dminor": 14,
+    "d#minor": 15,
+    "eminor": 16,
+    "fminor": 17,
+    "f#minor": 18,
+    "gminor": 19,
+    "g#minor": 20,
+    "aminor": 21,
+    "a#minor": 22,
+    "bminor": 23,
+}
 
 """ 0: 건반악기, 1: 리드악기(신스리드 포함), 2: 체명악기, 3: 발현악기, 4: 현악기(신스패드 포함)
     5: 부는악기(목관악기, 금관악기 포함), 6: 타악기, 7: 기타"""

@@ -17,10 +17,9 @@ from .utils import (
 class MidiInfo:
     # meta
     bpm: int
-    audio_key: str
-    chord_type: str
-    time_signature: str
-    pitch_range: str
+    audio_key: int
+    time_signature: int
+    pitch_range: int
     num_measure: int
     inst: int
 
@@ -38,7 +37,6 @@ class MidiExtractor:
         # meta
         - bpm
         - audio_key
-        - chord_type
         - time_signature
         - pitch_range
         - num_measure
@@ -74,12 +72,11 @@ class MidiExtractor:
 
     def parse(self) -> MidiInfo:
         meta_track = self._midi.tracks[0]
-        audio_key, chord_type = get_key_chord_type(get_meta_message(meta_track, "key_signature"))
+        key = get_key_chord_type(get_meta_message(meta_track, "key_signature"))
 
         return MidiInfo(
             bpm=get_bpm(get_meta_message(meta_track, "set_tempo")),
-            audio_key=audio_key,
-            chord_type=chord_type,
+            audio_key=key,
             time_signature=get_time_signature(get_meta_message(meta_track, "time_signature")),
             pitch_range=get_pitch_range(self._midi, self.keyswitch_velocity),
             num_measure=get_num_measures_from_midi(self.path),
