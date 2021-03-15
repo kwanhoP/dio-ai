@@ -122,6 +122,8 @@ def main(args):
         n_embd=model_config.n_embd,
         n_head=model_config.n_head,
         n_layer=model_config.n_layer,
+        pad_token_id=0,
+        eos_token_id=1,
     )
     model_factory = PozalabsModelFactory()
     model = model_factory.create(model_name, config)

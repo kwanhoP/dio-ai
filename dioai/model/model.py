@@ -13,9 +13,8 @@ from transformers.models.gpt2.modeling_gpt2 import GPT2_INPUTS_DOCSTRING
 class GPT2BaseModel(GPT2LMHeadModel):
     name = "gpt2_base"
 
-    def __init__(self, config: PretrainedConfig, pad_id: int = 0):
+    def __init__(self, config: PretrainedConfig):
         super().__init__(config)
-        self.pad_id = pad_id
 
     @add_start_docstrings_to_model_forward(GPT2_INPUTS_DOCSTRING)
     @add_code_sample_docstrings(
@@ -73,7 +72,7 @@ class GPT2BaseModel(GPT2LMHeadModel):
             shift_logits = lm_logits[..., :-1, :].contiguous()
             shift_labels = labels[..., 1:].contiguous()
             # Flatten the tokens
-            loss_fct = CrossEntropyLoss(ignore_index=self.pad_id)
+            loss_fct = CrossEntropyLoss(ignore_index=self.config.pad_token_id)
             loss = loss_fct(shift_logits.view(-1, shift_logits.size(-1)), shift_labels.view(-1))
 
         if not return_dict:
