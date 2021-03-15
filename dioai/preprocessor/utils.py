@@ -12,16 +12,20 @@ import numpy as np
 import pretty_midi
 
 from .constants import (
+    BPM_INTERVAL,
     CHORD_TRACK_NAME,
     CHORD_TYPE_IDX,
     DEFAULT_NUM_BEATS,
     DEFAULT_PITCH_RANGE,
+    INST_PROGRAM_MAP,
     KEY_MAP,
+    MAX_BPM,
     MINOR_KEY,
     NO_META_MESSAGE,
     PITCH_RANGE_CUT,
     PITCH_RANGE_MAP,
     PROGRAM_INST_MAP,
+    SIG_TIME_MAP,
     TIME_SIG_MAP,
     UNKNOWN,
 )
@@ -37,77 +41,86 @@ class ChordType(str, enum.Enum):
         return list(cls.__members__.values())
 
 
-def parse_midi(
-    midi_path: Union[str, Path], num_measures: int, shift_size: int, parsing_midi_pth: Path
-) -> None:
-    midi_data = pretty_midi.PrettyMIDI(midi_path)
-    if len(midi_data.time_signature_changes) == 1:
-        time_signature: pretty_midi.TimeSignature = midi_data.time_signature_changes[-1]
-    elif len(midi_data.time_signature_changes) > 1:
-        print(os.path.splitext(midi_path.split("/")[-1])[0], ": chunk 파일에 변박이 존재합니다.")
-        return
-    coordination = time_signature.numerator / time_signature.denominator
-    ticks_per_measure = midi_data.resolution * DEFAULT_NUM_BEATS * coordination
-    midi_data.tick_to_time(ticks_per_measure)
+def parse_midi(midi_path: str, num_measures: int, shift_size: int, parsing_midi_pth: Path) -> None:
 
-    notes = midi_data.instruments[0].notes
-    parsing_duration = ticks_per_measure * num_measures
-    shift_duration = ticks_per_measure * shift_size
+    midifiles = []
 
-    # Get Tempo
-    _, tempo_infos = midi_data.get_tempo_changes()
+    for i, (dirpath, _, filenames) in enumerate(os.walk(midi_path)):
+        fileExt = [".mid", ".MID", ".MIDI", ".midi"]
+        for Ext in fileExt:
+            tem = [os.path.join(dirpath, _) for _ in filenames if _.endswith(Ext)]
+            if tem:
+                midifiles += tem
 
-    parsed_notes = []
-    for start_tick in range(
-        midi_data.time_to_tick(notes[0].start),
-        int(midi_data.time_to_tick(midi_data.get_end_time()) - parsing_duration),
-        int(shift_duration),
-    ):
-        end_tick = start_tick + parsing_duration
-        tmp_note_list = []
-        for i, note in enumerate(notes):
-            new_note = copy.deepcopy(note)
-            if (
-                start_tick <= midi_data.time_to_tick(new_note.start) < end_tick
-                or start_tick < midi_data.time_to_tick(new_note.end) <= end_tick
-            ):
-                tmp_note_list.append(new_note)
-        for i, note in enumerate(tmp_note_list):
-            note.start = note.start - midi_data.tick_to_time(start_tick)
-            note.end = note.end - midi_data.tick_to_time(start_tick)
-            if note.start < 0.0:
-                note.start = 0.0
-            if midi_data.time_to_tick(note.end) > parsing_duration:
-                note.end = midi_data.tick_to_time(parsing_duration)
-        parsed_notes.append(tmp_note_list)
+    for file_idx, filename in enumerate(midifiles):
+        print(filename)
+        midi_data = pretty_midi.PrettyMIDI(filename)
+        if len(midi_data.time_signature_changes) == 1:
+            time_signature: pretty_midi.TimeSignature = midi_data.time_signature_changes[-1]
+        elif len(midi_data.time_signature_changes) > 1:
+            print(os.path.splitext(midi_path.split("/")[-1])[0], ": chunk 파일에 변박이 존재합니다.")
+            return
+        coordination = time_signature.numerator / time_signature.denominator
+        ticks_per_measure = midi_data.resolution * DEFAULT_NUM_BEATS * coordination
+        midi_data.tick_to_time(ticks_per_measure)
 
-    for i, new_notes in enumerate(parsed_notes):
-        new_midi_object = pretty_midi.PrettyMIDI(
-            resolution=midi_data.resolution, initial_tempo=float(tempo_infos)
-        )
-        # key, 박자 입력
-        ks_list = midi_data.key_signature_changes
-        ts_list = midi_data.time_signature_changes
+        notes = midi_data.instruments[0].notes
+        parsing_duration = ticks_per_measure * num_measures
+        shift_duration = ticks_per_measure * shift_size
 
-        if ks_list:  # ks 가 변화하지 않는 경우 default값으로 설정 필요
-            for ks in ks_list:
-                new_midi_object.key_signature_changes.append(ks)
+        # Get Tempo
+        _, tempo_infos = midi_data.get_tempo_changes()
 
-        if ts_list:  # ts 가 변화하지 않는 경우 default값으로 설정 필요
-            for ts in ts_list:
-                new_midi_object.time_signature_changes.append(ts)
+        parsed_notes = []
+        for start_tick in range(
+            midi_data.time_to_tick(notes[0].start),
+            int(midi_data.time_to_tick(midi_data.get_end_time()) - parsing_duration),
+            int(shift_duration),
+        ):
+            end_tick = start_tick + parsing_duration
+            tmp_note_list = []
+            for i, note in enumerate(notes):
+                new_note = copy.deepcopy(note)
+                if (
+                    start_tick <= midi_data.time_to_tick(new_note.start) < end_tick
+                    or start_tick < midi_data.time_to_tick(new_note.end) <= end_tick
+                ):
+                    tmp_note_list.append(new_note)
+            for i, note in enumerate(tmp_note_list):
+                note.start = note.start - midi_data.tick_to_time(start_tick)
+                note.end = note.end - midi_data.tick_to_time(start_tick)
+                if note.start < 0.0:
+                    note.start = 0.0
+                if midi_data.time_to_tick(note.end) > parsing_duration:
+                    note.end = midi_data.tick_to_time(parsing_duration)
+            parsed_notes.append(tmp_note_list)
 
-        # 노트 입력
-        new_instrument = pretty_midi.Instrument(program=midi_data.instruments[0].program)
-        new_instrument.notes = new_notes
-        new_midi_object.instruments.append(new_instrument)
-        filename_without_extension = os.path.splitext(midi_path.split("/")[-1])[0]
-        new_midi_object.write(
-            os.path.join(
-                parsing_midi_pth,
-                filename_without_extension + f"_{num_measures}_{i}.mid",
+        for i, new_notes in enumerate(parsed_notes):
+            new_midi_object = pretty_midi.PrettyMIDI(
+                resolution=midi_data.resolution, initial_tempo=float(tempo_infos)
             )
-        )
+            # key, 박자 입력
+            ks_list = midi_data.key_signature_changes
+            ts_list = midi_data.time_signature_changes
+
+            if ks_list:  # ks 가 변화하지 않는 경우 default값으로 설정 필요
+                for ks in ks_list:
+                    new_midi_object.key_signature_changes.append(ks)
+
+            if ts_list:  # ts 가 변화하지 않는 경우 default값으로 설정 필요
+                for ts in ts_list:
+                    new_midi_object.time_signature_changes.append(ts)
+
+            # 노트 입력
+            new_instrument = pretty_midi.Instrument(program=midi_data.instruments[0].program)
+            new_instrument.notes = new_notes
+            new_midi_object.instruments.append(new_instrument)
+            filename_without_extension = os.path.splitext(filename.split("/")[-1])[0]
+            new_midi_object.write(
+                os.path.join(
+                    parsing_midi_pth, filename_without_extension + f"_{num_measures}_{i}.mid",
+                )
+            )
 
 
 def get_inst_from_midi(midi_path: Union[str, Path]) -> int:
@@ -120,8 +133,17 @@ def get_inst_from_midi(midi_path: Union[str, Path]) -> int:
     if not midi_data.instruments:
         return UNKNOWN
     else:
-        pro_num = midi_data.instruments[0].program
-        return PROGRAM_INST_MAP[str(pro_num)]
+        program = midi_data.instruments[0].program
+        return PROGRAM_INST_MAP[str(program)]
+
+
+def get_inst_from_info(inst_type: int) -> int:
+    return INST_PROGRAM_MAP[inst_type]
+
+
+def get_ts_from_info(ts_type: int) -> [int, int]:
+    numerator, denominator = SIG_TIME_MAP[ts_type].split("/")
+    return int(numerator), int(denominator)
 
 
 def get_num_measures_from_midi(
@@ -210,16 +232,16 @@ def get_time_signature(meta_message: mido.MetaMessage) -> Union[mido.MetaMessage
 
 
 def get_bpm(meta_message: mido.MetaMessage) -> Union[mido.MetaMessage, str]:
-    """미디의 bpm을 추출하여 5단위로 인코딩 합니다."""
+    """미디의 bpm을 추출하여 BPM_INTERVAL(5단위)로 인코딩 합니다."""
     bpm = round(mido.tempo2bpm(getattr(meta_message, "tempo")))
 
     if isinstance(meta_message, str):
         return UNKNOWN
 
-    if bpm == 200:
+    if bpm >= MAX_BPM:
         return 39
     else:
-        return bpm // 5
+        return bpm // BPM_INTERVAL
 
 
 def get_key_chord_type(

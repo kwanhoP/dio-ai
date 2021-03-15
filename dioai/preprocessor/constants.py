@@ -15,6 +15,13 @@ MINOR_KEY = "m"
 NO_META_MESSAGE = "no_info"
 UNKNOWN = "unknown"
 
+NUM_VELOCITY_BINS = 32
+STEPS_PER_SECOND = 100
+MIN_PITCH = 0
+MAX_PITCH = 127
+BPM_INTERVAL = 5
+MAX_BPM = 200
+
 TIME_SIG_MAP = {
     "3/2": 0,
     "4/2": 1,
@@ -31,6 +38,28 @@ TIME_SIG_MAP = {
     "7/8": 12,
     "9/8": 13,
     "12/8": 14,
+    "2/2": 15,
+    "15/8": 16,
+}
+
+SIG_TIME_MAP = {
+    0: "3/2",
+    1: "4/2",
+    2: "2/4",
+    3: "3/4",
+    4: "4/4",
+    5: "5/4",
+    6: "6/4",
+    7: "7/4",
+    8: "9/4",
+    9: "12/4",
+    10: "3/8",
+    11: "6/8",
+    12: "7/8",
+    13: "9/8",
+    14: "12/8",
+    15: "2/2",
+    16: "15/8",
 }
 
 KEY_MAP = {
@@ -62,6 +91,18 @@ KEY_MAP = {
 
 """ 0: 건반악기, 1: 리드악기(신스리드 포함), 2: 체명악기, 3: 발현악기, 4: 현악기(신스패드 포함)
     5: 부는악기(목관악기, 금관악기 포함), 6: 타악기, 7: 기타"""
+
+INST_PROGRAM_MAP = {
+    0: 0,  # 건반악기: Acoustic Piano
+    1: 80,  # 리드악기: Synth Lead (Square)
+    2: 8,  # 채명악기: Celesta
+    3: 24,  # 발현악기: Acoustic Guitar
+    4: 48,  # 현악기: String Ensemble
+    5: 56,  # 부는악기: Trumpet
+    6: 57,  # 타악기: Timpani
+    7: 96,  # 기타: FX 1 (rain)
+}
+
 PROGRAM_INST_MAP = {
     "0": 0,
     "1": 0,

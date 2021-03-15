@@ -1,7 +1,9 @@
-from dataclasses import dataclass
+import os
 
 import mido
 
+from .container import MidiInfo
+from .encoder import encode_midi
 from .utils import (
     get_bpm,
     get_inst_from_midi,
@@ -11,23 +13,6 @@ from .utils import (
     get_pitch_range,
     get_time_signature,
 )
-
-
-@dataclass
-class MidiInfo:
-    # meta
-    bpm: int
-    audio_key: int
-    time_signature: int
-    pitch_range: int
-    num_measure: int
-    inst: int
-
-    # note
-    note_on: int
-    note_off: int
-    time_shift: int
-    note_vel: int
 
 
 class MidiExtractor:
@@ -43,17 +28,10 @@ class MidiExtractor:
         - inst
 
         # note
-        - note_on
-        - note_off
-        - time_shift
-        - note_vel
     """
 
     def __init__(
-        self,
-        pth: str,
-        keyswitch_velocity: int,
-        default_pitch_range: str,
+        self, pth: str, keyswitch_velocity: int, default_pitch_range: str,
     ):
         """
 
@@ -66,6 +44,8 @@ class MidiExtractor:
         """
 
         self._midi = mido.MidiFile(pth)
+        self.note_seq = encode_midi(pth)
+        self.filename_without_extension = os.path.splitext(pth.split("/")[-1])[0]
         self.keyswitch_velocity = keyswitch_velocity
         self.default_pitch_range = default_pitch_range
         self.path = pth
@@ -74,11 +54,14 @@ class MidiExtractor:
         meta_track = self._midi.tracks[0]
         key = get_key_chord_type(get_meta_message(meta_track, "key_signature"))
 
-        return MidiInfo(
+        midi_info = MidiInfo(
             bpm=get_bpm(get_meta_message(meta_track, "set_tempo")),
             audio_key=key,
             time_signature=get_time_signature(get_meta_message(meta_track, "time_signature")),
             pitch_range=get_pitch_range(self._midi, self.keyswitch_velocity),
             num_measure=get_num_measures_from_midi(self.path),
             inst=get_inst_from_midi(self.path),
+            note_seq=self.note_seq,
         )
+
+        return midi_info

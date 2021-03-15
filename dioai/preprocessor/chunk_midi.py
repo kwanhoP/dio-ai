@@ -4,7 +4,7 @@ import mido
 import numpy as np
 import pretty_midi
 
-from .constants import INSTRUMENT_NOT_FOR_MELODY
+from .constants import BPM_INTERVAL, INSTRUMENT_NOT_FOR_MELODY
 
 # Tempo, Key, Time Signature가 너무 자주 바뀌는 경우는 학습에 이용하지 않음
 MAXIMUM_CHANGE = 8
@@ -80,6 +80,10 @@ def chunk_midi(
             average_tempo = cur_tempo
         else:
             average_tempo = int(total_tempo / midi_data.get_end_time())
+
+        # 학습시킬때 BPM_INTERVAL 단위로 입력값이 들어가기 떄문에
+        # tick의 오차를 해결하기 위해서 필요한 부분 이부분이 해결되어야 마디 길이에 정확히 설정 가능
+        average_tempo = average_tempo - average_tempo % BPM_INTERVAL
 
         del midi_data
 

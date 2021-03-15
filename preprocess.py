@@ -2,9 +2,14 @@
 
 import argparse
 import os
+from pathlib import Path
 
 from dioai.preprocessor.chunk_midi import chunk_midi
 from dioai.preprocessor.extract_info import MidiExtractor
+from dioai.preprocessor.utils import parse_midi
+
+# 4마디, 8마디 단위로 데이터화
+STANDARD_WINDOW_SIZE = [4, 8]
 
 
 def get_parser() -> argparse.ArgumentParser:
@@ -52,6 +57,12 @@ def get_parser() -> argparse.ArgumentParser:
         default=False,
         help="chunked 이후 과정만 할 때, --chunk_midi_dir을 대상으로 인코딩 진행",
     )
+    parser.add_argument(
+        "--window_chunk_dir",
+        type=str,
+        default=False,
+        help="chunked된 미디 파일을 마디 길이에 맞게 Augment 이후 저장되는 폴더",
+    )
     return parser
 
 
@@ -63,6 +74,7 @@ def main(args):
 
     midi_dataset_path = args.source_midi_dir
     chunked_midi_path = args.chunk_midi_dir
+    window_chunked_dir = args.window_chunk_dir
     after_chunked = args.after_chunked
     tmp_midi_dir = args.tmp_midi_dir
     # chunk
@@ -76,10 +88,19 @@ def main(args):
             tmp_midi_dir=tmp_midi_dir,
         )
 
+    parsing_midi_pth = Path(window_chunked_dir)
+    for window_size in STANDARD_WINDOW_SIZE:
+        parse_midi(
+            midi_path=chunked_midi_path,
+            num_measures=window_size,
+            shift_size=1,
+            parsing_midi_pth=parsing_midi_pth,
+        )
+
     # extract & encode
     chunked_midi = []
 
-    for _, (dirpath, _, filenames) in enumerate(os.walk(chunked_midi_path)):
+    for _, (dirpath, _, filenames) in enumerate(os.walk(parsing_midi_pth)):
         fileExt = [".mid", ".MID", ".MIDI", ".midi"]
         for Ext in fileExt:
             tem = [os.path.join(dirpath, _) for _ in filenames if _.endswith(Ext)]
