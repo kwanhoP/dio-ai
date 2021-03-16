@@ -1,11 +1,14 @@
 import inspect
 import pprint
 
-from .dataset import GPT2BaseDataset
+from .dataset import GPT2BaseDataset, GPT2MetaToNoteDataset, meta_to_note_collate_fn
 
 
 class PozalabsDatasetFactory:
-    dataset_map = {GPT2BaseDataset.name: GPT2BaseDataset}
+    dataset_map = {
+        GPT2BaseDataset.name: GPT2BaseDataset,
+        GPT2MetaToNoteDataset.name: GPT2MetaToNoteDataset,
+    }
 
     def create(self, name: str, *args, **kwargs):
         dataset_cls = self.dataset_map.get(name)
@@ -23,4 +26,4 @@ class PozalabsDatasetFactory:
         return instance.build()
 
 
-__all__ = ["GPT2BaseDataset", "PozalabsDatasetFactory"]
+__all__ = ["GPT2BaseDataset", "PozalabsDatasetFactory", "meta_to_note_collate_fn"]

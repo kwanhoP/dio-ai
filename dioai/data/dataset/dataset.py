@@ -1,7 +1,10 @@
+from __future__ import annotations
+
 from multiprocessing import cpu_count
 from pathlib import Path
 from typing import Dict, Generator, Iterator, List, Optional, Union
 
+import numpy as np
 import tensorflow as tf
 import torch
 from torch.utils.data import Dataset, IterableDataset
@@ -111,3 +114,46 @@ def compute_attention_mask(features: FeatureType, pad_id: int = 0) -> FeatureTyp
         ),
     }
     return result
+
+
+class GPT2MetaToNoteDataset(Dataset):
+    name = "gpt2_meta_to_note"
+
+    def __init__(self, input_path: Union[str, Path], target_path: Union[str, Path]):
+        self.inputs = np.load(input_path, allow_pickle=True)
+        self.targets = np.load(target_path, allow_pickle=True)
+
+        if len(self.inputs) != len(self.targets):
+            raise ValueError("Number of input and target examples must be same")
+
+    def build(self) -> GPT2MetaToNoteDataset:
+        return self
+
+    def __len__(self) -> int:
+        return len(self.inputs)
+
+    def __getitem__(self, item: int) -> Dict[str, np.ndarray]:
+        return {
+            "input_ids": self.inputs[item],
+            "attention_mask": self.compute_attention_mask(self.inputs[item]),
+            "labels": self.targets[item],
+        }
+
+    @staticmethod
+    def compute_attention_mask(inputs: np.ndarray) -> np.ndarray:
+        return np.ones_like(inputs, dtype=np.int64)
+
+
+def meta_to_note_collate_fn(batch: List[Dict[str, np.ndarray]]) -> Dict[str, torch.Tensor]:
+    def _pad_label(_tensor, _max_length):
+        return torch.cat([_tensor, _tensor.new_zeros(_max_length - _tensor.size(0))])
+
+    label_list = [torch.LongTensor(b["labels"]) for b in batch]
+    max_length = max(len(label) for label in label_list)
+    labels = torch.stack([_pad_label(label, max_length) for label in label_list])
+
+    return {
+        "input_ids": torch.stack([torch.LongTensor(b["input_ids"]) for b in batch]),
+        "attention_mask": torch.stack([torch.LongTensor(b["attention_mask"]) for b in batch]),
+        "labels": labels,
+    }
