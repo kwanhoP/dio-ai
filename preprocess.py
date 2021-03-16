@@ -4,9 +4,12 @@ import argparse
 import os
 from pathlib import Path
 
+import numpy as np
+
 from dioai.preprocessor.chunk_midi import chunk_midi
+from dioai.preprocessor.constants import UNKNOWN
 from dioai.preprocessor.extract_info import MidiExtractor
-from dioai.preprocessor.utils import parse_midi
+from dioai.preprocessor.utils import encode_meta_info, parse_midi
 
 # 4마디, 8마디 단위로 데이터화
 STANDARD_WINDOW_SIZE = [4, 8]
@@ -63,6 +66,12 @@ def get_parser() -> argparse.ArgumentParser:
         default=False,
         help="chunked된 미디 파일을 마디 길이에 맞게 Augment 이후 저장되는 폴더",
     )
+    parser.add_argument(
+        "--encode_npy_dir",
+        type=str,
+        default=True,
+        help="인코딩 된 미디 데이터를 npy 형식으로 저장하는 폴더",
+    )
     return parser
 
 
@@ -77,8 +86,12 @@ def main(args):
     window_chunked_dir = args.window_chunk_dir
     after_chunked = args.after_chunked
     tmp_midi_dir = args.tmp_midi_dir
+    encode_npy_dir = args.encode_npy_dir
     # chunk
     if not after_chunked:
+        print("---------------------------------")
+        print("-----------START CHUNK-----------")
+        print("---------------------------------")
         chunk_midi(
             steps_per_sec=STEPS_PER_SEC,
             longest_allowed_space=LONGEST_ALLOWED_SPACE,
@@ -89,6 +102,9 @@ def main(args):
         )
 
     parsing_midi_pth = Path(window_chunked_dir)
+    print("---------------------------------")
+    print("----------START PARSING----------")
+    print("---------------------------------")
     for window_size in STANDARD_WINDOW_SIZE:
         parse_midi(
             midi_path=chunked_midi_path,
@@ -107,11 +123,29 @@ def main(args):
             if tem:
                 chunked_midi += tem
 
+    input_meta = []
+    target_note = []
+    print("---------------------------------")
+    print("-----------START EXTRACT---------")
+    print("---------------------------------")
     for midi_file in chunked_midi:
         metadata = MidiExtractor(
             pth=midi_file, keyswitch_velocity=1, default_pitch_range="mid"
         ).parse()
-        print(metadata)
+        if metadata.audio_key != UNKNOWN:
+            input_meta.append(np.array(encode_meta_info(metadata)))
+            target_note.append(np.array(metadata.note_seq))
+        else:
+            print("key 값이 존재하지 않는 샘플입니다.")
+
+    input_npy = np.array(input_meta, dtype=object)
+    target_npy = np.array(target_note, dtype=object)
+
+    print(input_npy.shape, target_npy.shape)
+    print(target_npy)
+
+    np.save(os.path.join(encode_npy_dir, "input"), input_npy)
+    np.save(os.path.join(encode_npy_dir, "output"), target_npy)
 
 
 if __name__ == "__main__":

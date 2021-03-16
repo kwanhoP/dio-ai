@@ -31,12 +31,15 @@ class MidiExtractor:
     """
 
     def __init__(
-        self, pth: str, keyswitch_velocity: int, default_pitch_range: str,
+        self,
+        pth: str,
+        keyswitch_velocity: int,
+        default_pitch_range: str,
     ):
         """
 
         Args:
-            pth: `str`. 파싱할 미디 path
+            pth: `str`. 인코딩 할 미디 path(chunked and parsing)
             keyswitch_velocity: `int`. pitch range 검사에서 제외할 keyswitch velocity
             default_pitch_range: `str`. 모든 노트의 velocity 가 keyswitch velocity 라서
                         pitch range를 검사할 수 없을 경우 사용할 기본 pitch range

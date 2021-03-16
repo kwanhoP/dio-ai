@@ -29,6 +29,7 @@ from .constants import (
     TIME_SIG_MAP,
     UNKNOWN,
 )
+from .container import MidiInfo
 from .exceptions import InvalidMidiError, InvalidMidiErrorMessage
 
 
@@ -61,9 +62,11 @@ def parse_midi(midi_path: str, num_measures: int, shift_size: int, parsing_midi_
             print(os.path.splitext(midi_path.split("/")[-1])[0], ": chunk 파일에 변박이 존재합니다.")
             return
         coordination = time_signature.numerator / time_signature.denominator
-        ticks_per_measure = midi_data.resolution * DEFAULT_NUM_BEATS * coordination
+        ticks_per_measure = int(midi_data.resolution * DEFAULT_NUM_BEATS * coordination)
         midi_data.tick_to_time(ticks_per_measure)
 
+        if not midi_data.instruments:
+            continue
         notes = midi_data.instruments[0].notes
         parsing_duration = ticks_per_measure * num_measures
         shift_duration = ticks_per_measure * shift_size
@@ -118,7 +121,8 @@ def parse_midi(midi_path: str, num_measures: int, shift_size: int, parsing_midi_
             filename_without_extension = os.path.splitext(filename.split("/")[-1])[0]
             new_midi_object.write(
                 os.path.join(
-                    parsing_midi_pth, filename_without_extension + f"_{num_measures}_{i}.mid",
+                    parsing_midi_pth,
+                    filename_without_extension + f"_{num_measures}_{i}.mid",
                 )
             )
 
@@ -258,7 +262,7 @@ def get_key_chord_type(
         return KEY_MAP[_ks[:CHORD_TYPE_IDX] + ChordType.MINOR.value]
 
     if isinstance(meta_message, str):
-        key_signature = UNKNOWN
+        return UNKNOWN
 
     else:
         key_signature: str = getattr(meta_message, "key")
@@ -277,3 +281,41 @@ def get_meta_message(meta_track: mido.MidiTrack, event_type: str) -> Union[mido.
         return NO_META_MESSAGE
 
     return messages.pop()
+
+
+def encode_meta_info(midi_info: MidiInfo) -> List:
+    meta = []
+    if midi_info.bpm is not UNKNOWN:
+        meta.append(midi_info.bpm + 1)
+    else:
+        meta.append(0)
+
+    if midi_info.audio_key is not UNKNOWN:
+        meta.append(midi_info.audio_key + 41)
+    else:
+        raise Exception("미디 키가 없는데 정보가 파싱되는 에러")
+
+    if midi_info.time_signature is not UNKNOWN:
+        meta.append(midi_info.time_signature + 66)
+    else:
+        meta.append(65)
+
+    if midi_info.pitch_range is not UNKNOWN:
+        meta.append(midi_info.pitch_range + 84)
+    else:
+        meta.append(83)
+
+    if midi_info.num_measure == 4:
+        meta.append(91)
+    elif midi_info.num_measure == 8:
+        meta.append(92)
+    else:
+        print("4,8 마디 이외 샘플이 있습니다.")
+        pass
+
+    if midi_info.inst is not UNKNOWN:
+        meta.append(midi_info.inst + 94)
+    else:
+        meta.append(93)
+
+    return meta
