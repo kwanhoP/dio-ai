@@ -13,20 +13,32 @@ import pretty_midi
 
 from .constants import (
     BPM_INTERVAL,
+    BPM_START_POINT,
+    BPM_UNKHOWN,
     CHORD_TRACK_NAME,
     CHORD_TYPE_IDX,
     DEFAULT_NUM_BEATS,
     DEFAULT_PITCH_RANGE,
     INST_PROGRAM_MAP,
+    INST_START_POINT,
+    INST_UNKHOWN,
     KEY_MAP,
+    KEY_START_POINT,
+    KEY_UNKHOWN,
     MAX_BPM,
+    MEASURES_4,
+    MEASURES_8,
     MINOR_KEY,
     NO_META_MESSAGE,
     PITCH_RANGE_CUT,
     PITCH_RANGE_MAP,
+    PITCH_RANGE_START_POINT,
+    PITCH_RANGE_UNKHOWN,
     PROGRAM_INST_MAP,
     SIG_TIME_MAP,
     TIME_SIG_MAP,
+    TS_START_POINT,
+    TS_UNKHOWN,
     UNKNOWN,
 )
 from .container import MidiInfo
@@ -286,36 +298,36 @@ def get_meta_message(meta_track: mido.MidiTrack, event_type: str) -> Union[mido.
 def encode_meta_info(midi_info: MidiInfo) -> List:
     meta = []
     if midi_info.bpm is not UNKNOWN:
-        meta.append(midi_info.bpm + 1)
+        meta.append(midi_info.bpm + BPM_START_POINT)
     else:
-        meta.append(0)
+        meta.append(BPM_UNKHOWN)
 
     if midi_info.audio_key is not UNKNOWN:
-        meta.append(midi_info.audio_key + 41)
+        meta.append(midi_info.audio_key + KEY_START_POINT)
     else:
-        raise Exception("미디 키가 없는데 정보가 파싱되는 에러")
+        meta.append(KEY_UNKHOWN)
 
     if midi_info.time_signature is not UNKNOWN:
-        meta.append(midi_info.time_signature + 66)
+        meta.append(midi_info.time_signature + TS_START_POINT)
     else:
-        meta.append(65)
+        meta.append(TS_UNKHOWN)
 
     if midi_info.pitch_range is not UNKNOWN:
-        meta.append(midi_info.pitch_range + 84)
+        meta.append(midi_info.pitch_range + PITCH_RANGE_START_POINT)
     else:
-        meta.append(83)
+        meta.append(PITCH_RANGE_UNKHOWN)
 
     if midi_info.num_measure == 4:
-        meta.append(91)
+        meta.append(MEASURES_4)
     elif midi_info.num_measure == 8:
-        meta.append(92)
+        meta.append(MEASURES_8)
     else:
         print("4,8 마디 이외 샘플이 있습니다.")
         pass
 
     if midi_info.inst is not UNKNOWN:
-        meta.append(midi_info.inst + 94)
+        meta.append(midi_info.inst + INST_START_POINT)
     else:
-        meta.append(93)
+        meta.append(INST_UNKHOWN)
 
     return meta

@@ -3,6 +3,7 @@ import os
 import mido
 import numpy as np
 import pretty_midi
+from tqdm import tqdm
 
 from .constants import BPM_INTERVAL, INSTRUMENT_NOT_FOR_MELODY
 
@@ -46,19 +47,23 @@ def chunk_midi(
             if tem:
                 midifiles += tem
 
-    for file_idx, filename in enumerate(midifiles):
-        print(f"{file_idx}th file, filename: {filename}")
+    for _, filename in tqdm(enumerate(midifiles)):
         try:
             midi_data = pretty_midi.PrettyMIDI(filename)
-        except OSError:
-            print("pretty_midi로 읽을 수 있는 형식의 mid 데이터가 아닙니다.")
+        except (
+            OSError,
+            KeyError,
+            ValueError,
+            mido.midifiles.meta.KeySignatureError,
+            EOFError,
+            IndexError,
+        ):
             continue
 
         # Get Average Tempo
         event_times, tempo_infos = midi_data.get_tempo_changes()
 
         if len(event_times) > MAXIMUM_CHANGE:
-            print(filename, "은 너무 많은 템포 변화를 가지고 있습니다.")
             continue
 
         total_tempo = 0
@@ -205,7 +210,6 @@ def chunk_midi(
                 ts_list = midi_data.time_signature_changes
 
                 if len(ks_list) > MAXIMUM_CHANGE or len(ts_list) > MAXIMUM_CHANGE:
-                    print(filename, "은 너무 많은 키 혹은 박자 변화를 가지고 있습니다.")
                     break
 
                 if ks_list:  # ks 가 변화하지 않는 경우 default값으로 설정 필요

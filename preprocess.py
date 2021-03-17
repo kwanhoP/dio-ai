@@ -7,7 +7,7 @@ from pathlib import Path
 import numpy as np
 
 from dioai.preprocessor.chunk_midi import chunk_midi
-from dioai.preprocessor.constants import UNKNOWN
+from dioai.preprocessor.constants import DEFAULT_BPM, DEFAULT_KEY, DEFAULT_TS, UNKNOWN
 from dioai.preprocessor.extract_info import MidiExtractor
 from dioai.preprocessor.utils import encode_meta_info, parse_midi
 
@@ -80,72 +80,100 @@ def main(args):
     STEPS_PER_SEC = args.steps_per_sec
     LONGEST_ALLOWED_SPACE = args.longest_allowed_space
     MINIMUM_CHUNK_LENGTH = args.minimum_chunk_length
-
-    midi_dataset_path = args.source_midi_dir
-    chunked_midi_path = args.chunk_midi_dir
-    window_chunked_dir = args.window_chunk_dir
     after_chunked = args.after_chunked
-    tmp_midi_dir = args.tmp_midi_dir
-    encode_npy_dir = args.encode_npy_dir
-    # chunk
-    if not after_chunked:
+
+    # sub-path parsing
+    midi_dataset_paths = args.source_midi_dir
+    subset_dir = os.listdir(midi_dataset_paths)
+    for subset in subset_dir:
+        print(f"------Start processing: {subset}-------")
+        midi_dataset_path = os.path.join(midi_dataset_paths, subset)
+        # 이미 전처리 완료된 subset 폴더는 건너 뜀
+        if os.path.exists(os.path.join(midi_dataset_path, args.encode_npy_dir, "input.npy")):
+            continue
+
+        chunked_midi_path = os.path.join(midi_dataset_path, args.chunk_midi_dir)
+        if not os.path.exists(chunked_midi_path):
+            os.makedirs(chunked_midi_path)
+
+        window_chunked_dir = os.path.join(midi_dataset_path, args.window_chunk_dir)
+        if not os.path.exists(window_chunked_dir):
+            os.makedirs(window_chunked_dir)
+
+        tmp_midi_dir = os.path.join(midi_dataset_path, args.tmp_midi_dir)
+        if not os.path.exists(tmp_midi_dir):
+            os.makedirs(tmp_midi_dir)
+
+        encode_npy_dir = os.path.join(midi_dataset_path, args.encode_npy_dir)
+        if not os.path.exists(encode_npy_dir):
+            os.makedirs(encode_npy_dir)
+        # chunk
+        if not after_chunked:
+            print("---------------------------------")
+            print("-----------START CHUNK-----------")
+            print("---------------------------------")
+            chunk_midi(
+                steps_per_sec=STEPS_PER_SEC,
+                longest_allowed_space=LONGEST_ALLOWED_SPACE,
+                minimum_chunk_length=MINIMUM_CHUNK_LENGTH,
+                midi_dataset_path=midi_dataset_path,
+                chunked_midi_path=chunked_midi_path,
+                tmp_midi_dir=tmp_midi_dir,
+            )
+
+        parsing_midi_pth = Path(window_chunked_dir)
         print("---------------------------------")
-        print("-----------START CHUNK-----------")
+        print("----------START PARSING----------")
         print("---------------------------------")
-        chunk_midi(
-            steps_per_sec=STEPS_PER_SEC,
-            longest_allowed_space=LONGEST_ALLOWED_SPACE,
-            minimum_chunk_length=MINIMUM_CHUNK_LENGTH,
-            midi_dataset_path=midi_dataset_path,
-            chunked_midi_path=chunked_midi_path,
-            tmp_midi_dir=tmp_midi_dir,
-        )
+        for window_size in STANDARD_WINDOW_SIZE:
+            parse_midi(
+                midi_path=chunked_midi_path,
+                num_measures=window_size,
+                shift_size=1,
+                parsing_midi_pth=parsing_midi_pth,
+            )
 
-    parsing_midi_pth = Path(window_chunked_dir)
-    print("---------------------------------")
-    print("----------START PARSING----------")
-    print("---------------------------------")
-    for window_size in STANDARD_WINDOW_SIZE:
-        parse_midi(
-            midi_path=chunked_midi_path,
-            num_measures=window_size,
-            shift_size=1,
-            parsing_midi_pth=parsing_midi_pth,
-        )
+        # extract & encode
+        chunked_midi = []
 
-    # extract & encode
-    chunked_midi = []
+        for _, (dirpath, _, filenames) in enumerate(os.walk(parsing_midi_pth)):
+            file_ext = [".mid", ".MID", ".MIDI", ".midi"]
+            for Ext in file_ext:
+                tem = [os.path.join(dirpath, _) for _ in filenames if _.endswith(Ext)]
+                if tem:
+                    chunked_midi += tem
 
-    for _, (dirpath, _, filenames) in enumerate(os.walk(parsing_midi_pth)):
-        fileExt = [".mid", ".MID", ".MIDI", ".midi"]
-        for Ext in fileExt:
-            tem = [os.path.join(dirpath, _) for _ in filenames if _.endswith(Ext)]
-            if tem:
-                chunked_midi += tem
+        input_meta = []
+        target_note = []
+        print("---------------------------------")
+        print("-----------START EXTRACT---------")
+        print("---------------------------------")
+        for midi_file in chunked_midi:
+            metadata = MidiExtractor(
+                pth=midi_file, keyswitch_velocity=1, default_pitch_range="mid"
+            ).parse()
+            if (
+                (metadata.bpm == DEFAULT_BPM)
+                and (metadata.audio_key == DEFAULT_KEY)
+                and (metadata.time_signature == DEFAULT_TS)
+            ):
+                print("메타정보가 모두 디폴트 값으로, 존재하지 않는 샘플입니다.")
+                metadata.bpm = UNKNOWN
+                metadata.audio_key = UNKNOWN
+                metadata.time_signature = UNKNOWN
 
-    input_meta = []
-    target_note = []
-    print("---------------------------------")
-    print("-----------START EXTRACT---------")
-    print("---------------------------------")
-    for midi_file in chunked_midi:
-        metadata = MidiExtractor(
-            pth=midi_file, keyswitch_velocity=1, default_pitch_range="mid"
-        ).parse()
-        if metadata.audio_key != UNKNOWN:
             input_meta.append(np.array(encode_meta_info(metadata)))
             target_note.append(np.array(metadata.note_seq))
-        else:
-            print("key 값이 존재하지 않는 샘플입니다.")
 
-    input_npy = np.array(input_meta, dtype=object)
-    target_npy = np.array(target_note, dtype=object)
+        input_npy = np.array(input_meta, dtype=object)
+        target_npy = np.array(target_note, dtype=object)
 
-    print(input_npy.shape, target_npy.shape)
-    print(target_npy)
+        print(input_npy.shape, target_npy.shape)
+        print(target_npy)
 
-    np.save(os.path.join(encode_npy_dir, "input"), input_npy)
-    np.save(os.path.join(encode_npy_dir, "output"), target_npy)
+        np.save(os.path.join(encode_npy_dir, "input"), input_npy)
+        np.save(os.path.join(encode_npy_dir, "target"), target_npy)
+        print(f"------Finish processing: {subset}-------")
 
 
 if __name__ == "__main__":
