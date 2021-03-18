@@ -9,6 +9,7 @@ import tensorflow as tf
 import torch
 from torch.utils.data import Dataset, IterableDataset
 
+from .gpt2_tf import GPT2MetaToNoteTFDataset
 from .magenta_tfrecord import BatchingSchemeArgs, FeatureType, MagentaTFRecordDataset
 
 
@@ -116,32 +117,52 @@ def compute_attention_mask(features: FeatureType, pad_id: int = 0) -> FeatureTyp
     return result
 
 
-class GPT2MetaToNoteDataset(Dataset):
+class GPT2MetaToNoteDataset(IterableDataset):
     name = "gpt2_meta_to_note"
 
-    def __init__(self, input_path: Union[str, Path], target_path: Union[str, Path]):
-        self.inputs = np.load(input_path, allow_pickle=True)
-        self.targets = np.load(target_path, allow_pickle=True)
+    def __init__(
+        self,
+        data_dir: Union[str, Path],
+        batch_size: int,
+        training: bool = True,
+        shuffle: bool = False,
+        pad_id: int = 0,
+    ):
+        self.training = training
+        self.tf_dataset = GPT2MetaToNoteTFDataset(data_dir)
+        self.tf_dataset_build_args = dict(
+            batch_size=batch_size, training=training, shuffle=shuffle, pad_id=pad_id,
+        )
 
-        if len(self.inputs) != len(self.targets):
-            raise ValueError("Number of input and target examples must be same")
+    def build(self) -> Union[IterableDataset, Dataset]:
+        if self.training:
+            return self
+        return self.to_dataset()
 
-    def build(self) -> GPT2MetaToNoteDataset:
-        return self
+    def __iter__(self) -> Generator[Dict[str, torch.Tensor], None, None]:
+        for item in self.prepare_dataset():
+            yield item
 
-    def __len__(self) -> int:
-        return len(self.inputs)
+    def to_dataset(self) -> Dataset:
+        class EvalDataset(Dataset):
+            def __init__(self, data: List[Dict[str, torch.Tensor]]):
+                super().__init__()
+                self.dataset = data
 
-    def __getitem__(self, item: int) -> Dict[str, np.ndarray]:
-        return {
-            "input_ids": self.inputs[item],
-            "attention_mask": self.compute_attention_mask(self.inputs[item]),
-            "labels": self.targets[item],
-        }
+            def __getitem__(self, item: int) -> Dict[str, torch.Tensor]:
+                return self.dataset[item]
 
-    @staticmethod
-    def compute_attention_mask(inputs: np.ndarray) -> np.ndarray:
-        return np.ones_like(inputs, dtype=np.int64)
+            def __len__(self) -> int:
+                return len(self.dataset)
+
+        return EvalDataset(list(self.prepare_dataset()))
+
+    def prepare_dataset(self) -> Iterator:
+        tf_dataset = self.tf_dataset.build(**self.tf_dataset_build_args)
+        return tf_dataset.as_numpy_iterator()
+
+    def __getitem__(self, item: int):
+        ...
 
 
 def meta_to_note_collate_fn(batch: List[Dict[str, np.ndarray]]) -> Dict[str, torch.Tensor]:
