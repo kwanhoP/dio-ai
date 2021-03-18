@@ -10,13 +10,14 @@ from typing import List, Optional, Union
 import mido
 import numpy as np
 import pretty_midi
+from sklearn.model_selection import train_test_split
+from tqdm import tqdm
 
 from .constants import (
     BPM_INTERVAL,
     BPM_START_POINT,
     BPM_UNKHOWN,
     CHORD_TRACK_NAME,
-    CHORD_TYPE_IDX,
     DEFAULT_NUM_BEATS,
     DEFAULT_PITCH_RANGE,
     INST_PROGRAM_MAP,
@@ -25,7 +26,6 @@ from .constants import (
     KEY_MAP,
     KEY_START_POINT,
     KEY_UNKHOWN,
-    MAX_BPM,
     MEASURES_4,
     MEASURES_8,
     MINOR_KEY,
@@ -40,6 +40,8 @@ from .constants import (
     TS_START_POINT,
     TS_UNKHOWN,
     UNKNOWN,
+    CHORD_TYPE_IDx,
+    MAx_BPM,
 )
 from .container import MidiInfo
 from .exceptions import InvalidMidiError, InvalidMidiErrorMessage
@@ -65,14 +67,12 @@ def parse_midi(midi_path: str, num_measures: int, shift_size: int, parsing_midi_
             if tem:
                 midifiles += tem
 
-    for file_idx, filename in enumerate(midifiles):
-        print(filename)
+    for filename in tqdm(midifiles):
         midi_data = pretty_midi.PrettyMIDI(filename)
         if len(midi_data.time_signature_changes) == 1:
             time_signature: pretty_midi.TimeSignature = midi_data.time_signature_changes[-1]
         elif len(midi_data.time_signature_changes) > 1:
-            print(os.path.splitext(midi_path.split("/")[-1])[0], ": chunk 파일에 변박이 존재합니다.")
-            return
+            continue
         coordination = time_signature.numerator / time_signature.denominator
         ticks_per_measure = int(midi_data.resolution * DEFAULT_NUM_BEATS * coordination)
         midi_data.tick_to_time(ticks_per_measure)
@@ -254,7 +254,7 @@ def get_bpm(meta_message: mido.MetaMessage) -> Union[mido.MetaMessage, str]:
     if isinstance(meta_message, str):
         return UNKNOWN
 
-    if bpm >= MAX_BPM:
+    if bpm >= MAx_BPM:
         return 39
     else:
         return bpm // BPM_INTERVAL
@@ -266,12 +266,12 @@ def get_key_chord_type(
     """미디의 key 정보(key, major/minor)를 추출합니다."""
 
     def _is_major(_ks):
-        return _ks[CHORD_TYPE_IDX] != MINOR_KEY
+        return _ks[CHORD_TYPE_IDx] != MINOR_KEY
 
     def _divide_key_chord_type(_ks, major):
         if major:
             return KEY_MAP[_ks + ChordType.MAJOR.value]
-        return KEY_MAP[_ks[:CHORD_TYPE_IDX] + ChordType.MINOR.value]
+        return KEY_MAP[_ks[:CHORD_TYPE_IDx] + ChordType.MINOR.value]
 
     if isinstance(meta_message, str):
         return UNKNOWN
@@ -323,7 +323,7 @@ def encode_meta_info(midi_info: MidiInfo) -> List:
         meta.append(MEASURES_8)
     else:
         print("4,8 마디 이외 샘플이 있습니다.")
-        pass
+        return None
 
     if midi_info.inst is not UNKNOWN:
         meta.append(midi_info.inst + INST_START_POINT)
@@ -331,3 +331,27 @@ def encode_meta_info(midi_info: MidiInfo) -> List:
         meta.append(INST_UNKHOWN)
 
     return meta
+
+
+def split_train_val_test(
+    input: np.array, target: np.ndarray, test_ratio: float, val_ratio: float
+) -> np.array:
+    x_train, x_test, y_train, y_test = train_test_split(
+        input, target, test_size=(test_ratio + val_ratio), shuffle=True, random_state=2021
+    )
+    x_val, x_test, y_val, y_test = train_test_split(
+        x_test,
+        y_test,
+        test_size=(test_ratio / (test_ratio + val_ratio)),
+        shuffle=True,
+        random_state=2021,
+    )
+    splits = {
+        "input_train": x_train,
+        "input_val": x_val,
+        "input_test": x_test,
+        "target_train": y_train,
+        "target_val": y_val,
+        "target_test": y_test,
+    }
+    return splits

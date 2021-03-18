@@ -5,11 +5,12 @@ import os
 from pathlib import Path
 
 import numpy as np
+from tqdm import tqdm
 
 from dioai.preprocessor.chunk_midi import chunk_midi
 from dioai.preprocessor.constants import DEFAULT_BPM, DEFAULT_KEY, DEFAULT_TS, UNKNOWN
 from dioai.preprocessor.extract_info import MidiExtractor
-from dioai.preprocessor.utils import encode_meta_info, parse_midi
+from dioai.preprocessor.utils import encode_meta_info, parse_midi, split_train_val_test
 
 # 4마디, 8마디 단위로 데이터화
 STANDARD_WINDOW_SIZE = [4, 8]
@@ -35,6 +36,18 @@ def get_parser() -> argparse.ArgumentParser:
         type=int,
         default=8,
         help="길이가 minimum_chunk_length초 미만인 chunk는 누락된다",
+    )
+    parser.add_argument(
+        "--val_ratio",
+        type=float,
+        default=0.2,
+        help="validation set 비율",
+    )
+    parser.add_argument(
+        "--test_ratio",
+        type=float,
+        default=0.2,
+        help="test set 비율",
     )
     parser.add_argument(
         "--source_midi_dir",
@@ -80,6 +93,8 @@ def main(args):
     STEPS_PER_SEC = args.steps_per_sec
     LONGEST_ALLOWED_SPACE = args.longest_allowed_space
     MINIMUM_CHUNK_LENGTH = args.minimum_chunk_length
+    VAL_RATIO = args.val_ratio
+    TEST_RATIO = args.test_ratio
     after_chunked = args.after_chunked
 
     # sub-path parsing
@@ -148,7 +163,7 @@ def main(args):
         print("---------------------------------")
         print("-----------START EXTRACT---------")
         print("---------------------------------")
-        for midi_file in chunked_midi:
+        for midi_file in tqdm(chunked_midi):
             metadata = MidiExtractor(
                 pth=midi_file, keyswitch_velocity=1, default_pitch_range="mid"
             ).parse()
@@ -157,22 +172,26 @@ def main(args):
                 and (metadata.audio_key == DEFAULT_KEY)
                 and (metadata.time_signature == DEFAULT_TS)
             ):
-                print("메타정보가 모두 디폴트 값으로, 존재하지 않는 샘플입니다.")
                 metadata.bpm = UNKNOWN
                 metadata.audio_key = UNKNOWN
                 metadata.time_signature = UNKNOWN
-
-            input_meta.append(np.array(encode_meta_info(metadata)))
-            target_note.append(np.array(metadata.note_seq))
+            meta = encode_meta_info(metadata)
+            if meta:
+                input_meta.append(np.array(meta))
+                target_note.append(np.array(metadata.note_seq))
+            else:
+                continue
 
         input_npy = np.array(input_meta, dtype=object)
         target_npy = np.array(target_note, dtype=object)
-
         print(input_npy.shape, target_npy.shape)
-        print(target_npy)
 
-        np.save(os.path.join(encode_npy_dir, "input"), input_npy)
-        np.save(os.path.join(encode_npy_dir, "target"), target_npy)
+        # split data
+        splits = split_train_val_test(input_npy, target_npy, VAL_RATIO, TEST_RATIO)
+
+        for split_name, value in splits.items():
+            np.save(os.path.join(encode_npy_dir, split_name), value)
+
         print(f"------Finish processing: {subset}-------")
 
 

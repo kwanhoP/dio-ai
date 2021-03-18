@@ -47,7 +47,7 @@ def chunk_midi(
             if tem:
                 midifiles += tem
 
-    for _, filename in tqdm(enumerate(midifiles)):
+    for filename in tqdm(midifiles):
         try:
             midi_data = pretty_midi.PrettyMIDI(filename)
         except (
