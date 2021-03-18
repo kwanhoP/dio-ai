@@ -1,13 +1,14 @@
 from __future__ import annotations
 
 from multiprocessing import cpu_count
-from pathlib import Path
 from typing import Dict, Generator, Iterator, List, Optional, Union
 
 import numpy as np
 import tensorflow as tf
 import torch
 from torch.utils.data import Dataset, IterableDataset
+
+from dioai.config import TransformersConfig
 
 from .gpt2_tf import GPT2MetaToNoteTFDataset
 from .magenta_tfrecord import BatchingSchemeArgs, FeatureType, MagentaTFRecordDataset
@@ -18,36 +19,33 @@ class GPT2BaseDataset(IterableDataset):
 
     def __init__(
         self,
-        data_dir: Union[str, Path],
+        config: TransformersConfig,
         split: str,
-        min_length: int,
-        max_length: int,
-        batch_size: int = 2048,
         preprocess: bool = True,
         random_crop_in_train: bool = True,
         shuffle: bool = True,
-        bucket_by_sequence: bool = True,
         training: bool = True,
         batch_shuffle_size: int = 512,
         shuffle_buffer_size: int = 10000,
         num_threads: int = cpu_count(),
-        pad_id: int = 0,
         batching_scheme_args: Optional[BatchingSchemeArgs] = None,
     ):
         super().__init__()
 
+        self.config = config
         self.num_threads = num_threads
-        self.pad_id = pad_id
         self.training = training
-        self.tfrecord_dataset = MagentaTFRecordDataset(data_dir, split)
+
+        self.tfrecord_dataset = MagentaTFRecordDataset(
+            data_dir=config.data_dir, split=getattr(config, f"{split}_split")
+        )
         self.tfrecord_dataset_build_args = dict(
-            min_length=min_length,
-            max_length=max_length,
-            batch_size=batch_size,
+            max_length=self.config.model.n_ctx,
+            batch_size=self.config.batch_size,
+            pad_id=self.config.model.pad_token_id,
             preprocess=preprocess,
             random_crop_in_train=random_crop_in_train,
             shuffle=shuffle,
-            bucket_by_sequence=bucket_by_sequence,
             training=training,
             batch_shuffle_size=batch_shuffle_size,
             shuffle_buffer_size=shuffle_buffer_size,
@@ -80,7 +78,7 @@ class GPT2BaseDataset(IterableDataset):
 
     def prepare_dataset(self) -> Iterator:
         def _prepare_inputs(_features: FeatureType) -> FeatureType:
-            return prepare_inputs(_features, pad_id=self.pad_id)
+            return prepare_inputs(_features, pad_id=self.config.model.pad_token_id)
 
         tf_dataset = self.tfrecord_dataset.build(**self.tfrecord_dataset_build_args)
         tf_dataset = tf_dataset.map(_prepare_inputs, num_parallel_calls=self.num_threads)
@@ -121,17 +119,16 @@ class GPT2MetaToNoteDataset(IterableDataset):
     name = "gpt2_meta_to_note"
 
     def __init__(
-        self,
-        data_dir: Union[str, Path],
-        batch_size: int,
-        training: bool = True,
-        shuffle: bool = False,
-        pad_id: int = 0,
+        self, config: TransformersConfig, split: str, training: bool = True, shuffle: bool = False
     ):
+        self.config = config
         self.training = training
-        self.tf_dataset = GPT2MetaToNoteTFDataset(data_dir)
+        self.tf_dataset = GPT2MetaToNoteTFDataset(self.config.data_dir, split=split)
         self.tf_dataset_build_args = dict(
-            batch_size=batch_size, training=training, shuffle=shuffle, pad_id=pad_id,
+            batch_size=self.config.batch_size,
+            pad_id=self.config.model.pad_token_id,
+            training=training,
+            shuffle=shuffle,
         )
 
     def build(self) -> Union[IterableDataset, Dataset]:

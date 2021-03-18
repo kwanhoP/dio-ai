@@ -1,10 +1,10 @@
 from transformers import PretrainedConfig
 
-from .model import GPT2BaseModel
+from .model import GP2MetaToNoteModel, GPT2BaseModel
 
 
 class PozalabsModelFactory:
-    model_map = {GPT2BaseModel.name: GPT2BaseModel}
+    model_map = {GPT2BaseModel.name: GPT2BaseModel, GP2MetaToNoteModel.name: GP2MetaToNoteModel}
 
     def create(self, name: str, config: PretrainedConfig):
         model_cls = self.model_map.get(name)

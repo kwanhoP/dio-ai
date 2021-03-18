@@ -43,17 +43,17 @@ class MagentaTFRecordDataset:
 
     def build(
         self,
-        min_length: int,
         max_length: int,
+        min_length: int = 16,
         batch_size: int = 2048,
         preprocess: bool = True,
         random_crop_in_train: bool = True,
         shuffle: bool = True,
-        bucket_by_sequence: bool = True,
         training: bool = True,
         batch_shuffle_size: int = 512,
         shuffle_buffer_size: int = 10000,
         num_threads: int = cpu_count(),
+        pad_id: int = 0,
         batching_scheme_args: Optional[BatchingSchemeArgs] = None,
     ) -> tf.data.Dataset:
         files = [
@@ -82,7 +82,7 @@ class MagentaTFRecordDataset:
             dataset = dataset.repeat()
         dataset = dataset.filter(valid_size(min_length, max_length))
 
-        if bucket_by_sequence:
+        if training:
             batching_scheme_args = batching_scheme_args or BatchingSchemeArgs(
                 min_length=min_length, max_length=max_length
             )
@@ -98,7 +98,7 @@ class MagentaTFRecordDataset:
             dataset = dataset.padded_batch(
                 batch_size,
                 padded_shapes={"targets": max_length},
-                padding_values=tf.constant(0, dtype=tf.int64),
+                padding_values=tf.constant(pad_id, dtype=tf.int64),
             )
             # `transformers.Trainer`에서는 `eval_dataset`에
             # `__len__` 메서드를 반드시 구현하도록 강제하고 있습니다.

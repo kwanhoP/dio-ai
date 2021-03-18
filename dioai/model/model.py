@@ -87,3 +87,7 @@ class GPT2BaseModel(GPT2LMHeadModel):
             attentions=transformer_outputs.attentions,
             cross_attentions=transformer_outputs.cross_attentions,
         )
+
+
+class GP2MetaToNoteModel(GPT2BaseModel):
+    name = "gpt2_meta_to_note"

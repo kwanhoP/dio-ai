@@ -1,6 +1,8 @@
 import inspect
 import pprint
 
+from dioai.config import TransformersConfig
+
 from .dataset import GPT2BaseDataset, GPT2MetaToNoteDataset, meta_to_note_collate_fn
 
 
@@ -10,12 +12,12 @@ class PozalabsDatasetFactory:
         GPT2MetaToNoteDataset.name: GPT2MetaToNoteDataset,
     }
 
-    def create(self, name: str, *args, **kwargs):
-        dataset_cls = self.dataset_map.get(name)
+    def create(self, config: TransformersConfig, *args, **kwargs):
+        dataset_cls = self.dataset_map.get(config.model_name)
         if dataset_cls is None:
             raise ValueError(f"`name` should be one of {tuple(self.dataset_map.keys())}")
         try:
-            instance = dataset_cls(*args, **kwargs)
+            instance = dataset_cls(config=config, *args, **kwargs)
         except TypeError as exc:
             full_arg_spec = inspect.getfullargspec(dataset_cls.__init__)
             raise TypeError(

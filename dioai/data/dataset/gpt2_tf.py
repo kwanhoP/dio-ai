@@ -10,8 +10,9 @@ class GPT2MetaToNoteTFDataset:
     target_filename = "target"
     npy_dir_name = "output_npy"
 
-    def __init__(self, data_dir: Union[str, Path]):
+    def __init__(self, data_dir: Union[str, Path], split: str):
         self.data_dir = Path(data_dir)
+        self.split = split
 
     def build(
         self,
@@ -63,7 +64,7 @@ class GPT2MetaToNoteTFDataset:
                 }
 
     def _filename(self, is_input: bool = True) -> str:
-        return f"{self.input_filename if is_input else self.target_filename}.npy"
+        return f"{self.input_filename if is_input else self.target_filename}_{self.split}.npy"
 
 
 def compute_attention_mask(input_features: np.ndarray) -> np.ndarray:
