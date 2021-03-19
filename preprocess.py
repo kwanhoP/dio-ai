@@ -8,7 +8,7 @@ import numpy as np
 from tqdm import tqdm
 
 from dioai.preprocessor.chunk_midi import chunk_midi
-from dioai.preprocessor.constants import DEFAULT_BPM, DEFAULT_KEY, DEFAULT_TS, UNKNOWN
+from dioai.preprocessor.constants import DEFAULT_BPM, DEFAULT_KEY, DEFAULT_TS, META_LEN, UNKNOWN
 from dioai.preprocessor.extract_info import MidiExtractor
 from dioai.preprocessor.utils import encode_meta_info, parse_midi, split_train_val_test
 
@@ -85,6 +85,12 @@ def get_parser() -> argparse.ArgumentParser:
         default=True,
         help="인코딩 된 미디 데이터를 npy 형식으로 저장하는 폴더",
     )
+    parser.add_argument(
+        "--model",
+        type=str,
+        default="GPT",
+        help="모델 구조에 따른 전처리 형식 지정 GPT: (meta + note_seq) 합쳐서 하나의 시퀀스로 학습",
+    )
     return parser
 
 
@@ -95,6 +101,7 @@ def main(args):
     MINIMUM_CHUNK_LENGTH = args.minimum_chunk_length
     VAL_RATIO = args.val_ratio
     TEST_RATIO = args.test_ratio
+    MODEL = args.model
     after_chunked = args.after_chunked
 
     # sub-path parsing
@@ -185,6 +192,8 @@ def main(args):
         input_npy = np.array(input_meta, dtype=object)
         target_npy = np.array(target_note, dtype=object)
         print(input_npy.shape, target_npy.shape)
+        if MODEL == "GPT":
+            target_npy = target_npy + META_LEN
 
         # split data
         splits = split_train_val_test(input_npy, target_npy, VAL_RATIO, TEST_RATIO)
