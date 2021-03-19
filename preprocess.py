@@ -10,10 +10,18 @@ from tqdm import tqdm
 from dioai.preprocessor.chunk_midi import chunk_midi
 from dioai.preprocessor.constants import DEFAULT_BPM, DEFAULT_KEY, DEFAULT_TS, META_LEN, UNKNOWN
 from dioai.preprocessor.extract_info import MidiExtractor
-from dioai.preprocessor.utils import encode_meta_info, parse_midi, split_train_val_test
+from dioai.preprocessor.utils import (
+    encode_meta_info,
+    load_poza_meta,
+    parse_midi,
+    split_train_val_test,
+)
 
 # 4마디, 8마디 단위로 데이터화
 STANDARD_WINDOW_SIZE = [4, 8]
+
+# Pozadataset URL
+URL = "https://backoffice.pozalabs.com/api/samples"
 
 
 def get_parser() -> argparse.ArgumentParser:
@@ -50,6 +58,13 @@ def get_parser() -> argparse.ArgumentParser:
         help="test set 비율",
     )
     parser.add_argument(
+        "--target_dataset",
+        type=str,
+        default="reddit",
+        choices=["reddit", "poza"],
+        help="전처리 대상이 되는 데이터셋 지정, 데이터셋에 따라 전처리 flow 차이가 존재",
+    )
+    parser.add_argument(
         "--source_midi_dir",
         type=str,
         required=True,
@@ -66,12 +81,6 @@ def get_parser() -> argparse.ArgumentParser:
         type=str,
         required=True,
         help="미디 파일의 Tempo가 달라지는 경우 노트가 밀리는 현상 해결을 위해 평균 Tempo값으로 고정되어 저장되는 폴더",
-    )
-    parser.add_argument(
-        "--after_chunked",
-        type=bool,
-        default=False,
-        help="chunked 이후 과정만 할 때, --chunk_midi_dir을 대상으로 인코딩 진행",
     )
     parser.add_argument(
         "--window_chunk_dir",
@@ -101,8 +110,9 @@ def main(args):
     MINIMUM_CHUNK_LENGTH = args.minimum_chunk_length
     VAL_RATIO = args.val_ratio
     TEST_RATIO = args.test_ratio
+    TARGET_DATASET = args.target_dataset
     MODEL = args.model
-    after_chunked = args.after_chunked
+
 
     # sub-path parsing
     midi_dataset_paths = args.source_midi_dir
@@ -130,7 +140,7 @@ def main(args):
         if not os.path.exists(encode_npy_dir):
             os.makedirs(encode_npy_dir)
         # chunk
-        if not after_chunked:
+        if TARGET_DATASET != "poza":
             print("---------------------------------")
             print("-----------START CHUNK-----------")
             print("---------------------------------")
@@ -143,65 +153,77 @@ def main(args):
                 tmp_midi_dir=tmp_midi_dir,
             )
 
-        parsing_midi_pth = Path(window_chunked_dir)
-        print("---------------------------------")
-        print("----------START PARSING----------")
-        print("---------------------------------")
-        for window_size in STANDARD_WINDOW_SIZE:
-            parse_midi(
-                midi_path=chunked_midi_path,
-                num_measures=window_size,
-                shift_size=1,
-                parsing_midi_pth=parsing_midi_pth,
-            )
+        if TARGET_DATASET != "poza":
+            parsing_midi_pth = Path(window_chunked_dir)
+            print("---------------------------------")
+            print("----------START PARSING----------")
+            print("---------------------------------")
+            for window_size in STANDARD_WINDOW_SIZE:
+                parse_midi(
+                    midi_path=chunked_midi_path,
+                    num_measures=window_size,
+                    shift_size=1,
+                    parsing_midi_pth=parsing_midi_pth,
+                )
 
-        # extract & encode
-        chunked_midi = []
+            # extract & encode
+            chunked_midi = []
 
-        for _, (dirpath, _, filenames) in enumerate(os.walk(parsing_midi_pth)):
-            file_ext = [".mid", ".MID", ".MIDI", ".midi"]
-            for Ext in file_ext:
-                tem = [os.path.join(dirpath, _) for _ in filenames if _.endswith(Ext)]
-                if tem:
-                    chunked_midi += tem
+            for _, (dirpath, _, filenames) in enumerate(os.walk(parsing_midi_pth)):
+                file_ext = [".mid", ".MID", ".MIDI", ".midi"]
+                for Ext in file_ext:
+                    tem = [os.path.join(dirpath, _) for _ in filenames if _.endswith(Ext)]
+                    if tem:
+                        chunked_midi += tem
 
-        input_meta = []
-        target_note = []
         print("---------------------------------")
         print("-----------START EXTRACT---------")
         print("---------------------------------")
-        for midi_file in tqdm(chunked_midi):
-            metadata = MidiExtractor(
-                pth=midi_file, keyswitch_velocity=1, default_pitch_range="mid"
-            ).parse()
-            if (
-                (metadata.bpm == DEFAULT_BPM)
-                and (metadata.audio_key == DEFAULT_KEY)
-                and (metadata.time_signature == DEFAULT_TS)
-            ):
-                metadata.bpm = UNKNOWN
-                metadata.audio_key = UNKNOWN
-                metadata.time_signature = UNKNOWN
-            meta = encode_meta_info(metadata)
-            if meta:
-                input_meta.append(np.array(meta))
-                target_note.append(np.array(metadata.note_seq))
-            else:
-                continue
 
-        input_npy = np.array(input_meta, dtype=object)
-        target_npy = np.array(target_note, dtype=object)
-        print(input_npy.shape, target_npy.shape)
-        if MODEL == "GPT":
-            target_npy = target_npy + META_LEN
+        input_meta = []
+        target_note = []
+        if TARGET_DATASET != "poza":
+            poza_metas = load_poza_meta(URL, 1, 7000)
+            for poza_meta in poza_metas:
+                metadata = MidiExtractor(
+                    pth=None, keyswitch_velocity=None, default_pitch_range=None, poza_meta=poza_meta
+                ).parse_poza()
+                print(metadata)  # test용 추후 삭제 예정
 
-        # split data
-        splits = split_train_val_test(input_npy, target_npy, VAL_RATIO, TEST_RATIO)
+        else:
+            for midi_file in tqdm(chunked_midi):
+                metadata = MidiExtractor(
+                    pth=midi_file, keyswitch_velocity=1, default_pitch_range="mid", poza_meta=None
+                ).parse()
+                if (
+                    (metadata.bpm == DEFAULT_BPM)
+                    and (metadata.audio_key == DEFAULT_KEY)
+                    and (metadata.time_signature == DEFAULT_TS)
+                ):
+                    metadata.bpm = UNKNOWN
+                    metadata.audio_key = UNKNOWN
+                    metadata.time_signature = UNKNOWN
+                meta = encode_meta_info(metadata)
+                if meta:
+                    input_meta.append(np.array(meta))
+                    target_note.append(np.array(metadata.note_seq))
+                else:
+                    continue
 
-        for split_name, value in splits.items():
-            np.save(os.path.join(encode_npy_dir, split_name), value)
+            input_npy = np.array(input_meta, dtype=object)
+            target_npy = np.array(target_note, dtype=object)
+            print(input_npy.shape, target_npy.shape)
+            
+            if MODEL == "GPT":
+                target_npy = target_npy + META_LEN
 
-        print(f"------Finish processing: {subset}-------")
+            # split data
+            splits = split_train_val_test(input_npy, target_npy, VAL_RATIO, TEST_RATIO)
+
+            for split_name, value in splits.items():
+                np.save(os.path.join(encode_npy_dir, split_name), value)
+
+            print(f"------Finish processing: {subset}-------")
 
 
 if __name__ == "__main__":

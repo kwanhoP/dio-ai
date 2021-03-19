@@ -1,15 +1,17 @@
 import copy
 import enum
 import functools
+import http
 import math
 import os
 import tempfile
 from pathlib import Path
-from typing import List, Optional, Union
+from typing import Any, Dict, List, Optional, Union
 
 import mido
 import numpy as np
 import pretty_midi
+import requests
 from sklearn.model_selection import train_test_split
 from tqdm import tqdm
 
@@ -18,6 +20,7 @@ from .constants import (
     BPM_START_POINT,
     BPM_UNKHOWN,
     CHORD_TRACK_NAME,
+    CHORD_TYPE_IDX,
     DEFAULT_NUM_BEATS,
     DEFAULT_PITCH_RANGE,
     INST_PROGRAM_MAP,
@@ -26,6 +29,7 @@ from .constants import (
     KEY_MAP,
     KEY_START_POINT,
     KEY_UNKHOWN,
+    MAX_BPM,
     MEASURES_4,
     MEASURES_8,
     MINOR_KEY,
@@ -40,8 +44,6 @@ from .constants import (
     TS_START_POINT,
     TS_UNKHOWN,
     UNKNOWN,
-    CHORD_TYPE_IDx,
-    MAx_BPM,
 )
 from .container import MidiInfo
 from .exceptions import InvalidMidiError, InvalidMidiErrorMessage
@@ -247,14 +249,18 @@ def get_time_signature(meta_message: mido.MetaMessage) -> Union[mido.MetaMessage
     return TIME_SIG_MAP[time_sig]
 
 
-def get_bpm(meta_message: mido.MetaMessage) -> Union[mido.MetaMessage, str]:
-    """미디의 bpm을 추출하여 BPM_INTERVAL(5단위)로 인코딩 합니다."""
-    bpm = round(mido.tempo2bpm(getattr(meta_message, "tempo")))
+def get_bpm(meta_message: mido.MetaMessage, poza_bpm: int) -> Union[mido.MetaMessage, str]:
+    """미디의 bpm을 추출하여 BPM_INTERVAL(5단위)로 인코딩 합니다.
+    poza_dataset의 경우 meta_message = None 으로 설정합니다."""
+    if not poza_bpm:
+        bpm = round(mido.tempo2bpm(getattr(meta_message, "tempo")))
+    else:
+        bpm = poza_bpm
 
     if isinstance(meta_message, str):
         return UNKNOWN
 
-    if bpm >= MAx_BPM:
+    if bpm >= MAX_BPM:
         return 39
     else:
         return bpm // BPM_INTERVAL
@@ -266,12 +272,12 @@ def get_key_chord_type(
     """미디의 key 정보(key, major/minor)를 추출합니다."""
 
     def _is_major(_ks):
-        return _ks[CHORD_TYPE_IDx] != MINOR_KEY
+        return _ks[CHORD_TYPE_IDX] != MINOR_KEY
 
     def _divide_key_chord_type(_ks, major):
         if major:
             return KEY_MAP[_ks + ChordType.MAJOR.value]
-        return KEY_MAP[_ks[:CHORD_TYPE_IDx] + ChordType.MINOR.value]
+        return KEY_MAP[_ks[:CHORD_TYPE_IDX] + ChordType.MINOR.value]
 
     if isinstance(meta_message, str):
         return UNKNOWN
@@ -322,7 +328,6 @@ def encode_meta_info(midi_info: MidiInfo) -> List:
     elif midi_info.num_measure == 8:
         meta.append(MEASURES_8)
     else:
-        print("4,8 마디 이외 샘플이 있습니다.")
         return None
 
     if midi_info.inst is not UNKNOWN:
@@ -355,3 +360,13 @@ def split_train_val_test(
         "target_test": y_test,
     }
     return splits
+
+
+def load_poza_meta(url, page: int = 1, per_page: int = 100) -> List[Dict[str, Any]]:
+    res = requests.get(url, params={"page": page, "per_page": per_page, "auto_changed": False})
+
+    if res.status_code != http.HTTPStatus.OK:
+        raise ValueError("Failed to fetch samples from backoffice")
+
+    data = res.json()
+    return data["samples"]["samples"]

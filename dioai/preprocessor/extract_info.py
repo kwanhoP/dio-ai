@@ -1,7 +1,8 @@
-import os
+from typing import Dict
 
 import mido
 
+from .constants import KEY_MAP, PITCH_RANGE_MAP, TIME_SIG_MAP
 from .container import MidiInfo
 from .encoder import encode_midi
 from .utils import (
@@ -31,10 +32,7 @@ class MidiExtractor:
     """
 
     def __init__(
-        self,
-        pth: str,
-        keyswitch_velocity: int,
-        default_pitch_range: str,
+        self, pth: str, keyswitch_velocity: int, default_pitch_range: str, poza_meta: Dict
     ):
         """
 
@@ -45,20 +43,20 @@ class MidiExtractor:
                         pitch range를 검사할 수 없을 경우 사용할 기본 pitch range
 
         """
-
-        self._midi = mido.MidiFile(pth)
-        self.note_seq = encode_midi(pth)
-        self.filename_without_extension = os.path.splitext(pth.split("/")[-1])[0]
+        if pth:
+            self._midi = mido.MidiFile(pth)
+            self.note_seq = encode_midi(pth)
         self.keyswitch_velocity = keyswitch_velocity
         self.default_pitch_range = default_pitch_range
         self.path = pth
+        self.poza_meta = poza_meta
 
     def parse(self) -> MidiInfo:
         meta_track = self._midi.tracks[0]
         key = get_key_chord_type(get_meta_message(meta_track, "key_signature"))
 
         midi_info = MidiInfo(
-            bpm=get_bpm(get_meta_message(meta_track, "set_tempo")),
+            bpm=get_bpm(get_meta_message(meta_track, "set_tempo"), poza_bpm=None),
             audio_key=key,
             time_signature=get_time_signature(get_meta_message(meta_track, "time_signature")),
             pitch_range=get_pitch_range(self._midi, self.keyswitch_velocity),
@@ -67,4 +65,16 @@ class MidiExtractor:
             note_seq=self.note_seq,
         )
 
+        return midi_info
+
+    def parse_poza(self) -> MidiInfo:
+        midi_info = MidiInfo(
+            bpm=get_bpm(meta_message=None, poza_bpm=self.poza_meta["bpm"]),
+            audio_key=KEY_MAP[self.poza_meta["audio_key"] + self.poza_meta["chord_type"]],
+            time_signature=TIME_SIG_MAP[self.poza_meta["time_signature"]],
+            pitch_range=PITCH_RANGE_MAP[self.poza_meta["pitch_range"]],
+            num_measure=self.poza_meta["num_measures"],
+            inst=self.poza_meta["inst"],
+            note_seq=None,
+        )
         return midi_info
