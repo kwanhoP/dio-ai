@@ -1,3 +1,4 @@
+import copy
 from pathlib import Path
 from typing import Union
 
@@ -20,7 +21,7 @@ class GPT2MetaToNoteTFDataset:
         training: bool = True,
         shuffle: bool = False,
         shuffle_buffer_size: int = 10000,
-        pad_id: int = 0,
+        pad_id: int = 103,
     ) -> tf.data.Dataset:
         dataset = tf.data.Dataset.from_generator(
             self._get_numpy_generator,
@@ -56,11 +57,12 @@ class GPT2MetaToNoteTFDataset:
             input_features = np.load(_get_filename(True), allow_pickle=True)
             target_features = np.load(_get_filename(False), allow_pickle=True)
             for input_feature, target_feature in zip(input_features, target_features):
-                attention_mask = compute_attention_mask(input_feature)
+                input_ids = np.concatenate([input_feature, target_feature])
+                attention_mask = compute_attention_mask(input_ids)
                 yield {
-                    "input_ids": input_feature,
+                    "input_ids": input_ids,
                     "attention_mask": attention_mask,
-                    "labels": target_feature,
+                    "labels": copy.deepcopy(input_ids),
                 }
 
     def _filename(self, is_input: bool = True) -> str:
