@@ -246,7 +246,10 @@ def get_time_signature(meta_message: mido.MetaMessage) -> Union[mido.MetaMessage
 
     attrs = ("numerator", "denominator")
     time_sig = "/".join(str(getattr(meta_message, attr)) for attr in attrs)
-    return TIME_SIG_MAP[time_sig]
+    try:
+        return TIME_SIG_MAP[time_sig]
+    except KeyError:
+        return UNKNOWN
 
 
 def get_bpm(meta_message: mido.MetaMessage, poza_bpm: int) -> Union[mido.MetaMessage, str]:

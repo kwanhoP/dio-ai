@@ -113,7 +113,6 @@ def main(args):
     TARGET_DATASET = args.target_dataset
     MODEL = args.model
 
-
     # sub-path parsing
     midi_dataset_paths = args.source_midi_dir
     subset_dir = os.listdir(midi_dataset_paths)
@@ -182,7 +181,7 @@ def main(args):
 
         input_meta = []
         target_note = []
-        if TARGET_DATASET != "poza":
+        if TARGET_DATASET == "poza":
             poza_metas = load_poza_meta(URL, 1, 7000)
             for poza_meta in poza_metas:
                 metadata = MidiExtractor(
@@ -213,7 +212,7 @@ def main(args):
             input_npy = np.array(input_meta, dtype=object)
             target_npy = np.array(target_note, dtype=object)
             print(input_npy.shape, target_npy.shape)
-            
+
             if MODEL == "GPT":
                 target_npy = target_npy + META_LEN
 
