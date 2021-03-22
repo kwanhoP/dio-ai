@@ -38,7 +38,7 @@ class TransformersConfig:
         training_config = TrainingArguments(
             **data.pop("training"),
             output_dir=str(output_root_dir.joinpath("checkpoints", dir_name)),
-            logging_dir=str(output_root_dir.joinpath("checkpoints", dir_name)),
+            logging_dir=str(output_root_dir.joinpath("runs", dir_name)),
             evaluation_strategy=EvaluationStrategy.STEPS,
         )
         return cls(**data, model=model_config, training=training_config)
