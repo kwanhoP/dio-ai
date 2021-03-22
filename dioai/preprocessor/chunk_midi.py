@@ -2,23 +2,24 @@ import os
 
 import mido
 import numpy as np
+import parmap
 import pretty_midi
 from tqdm import tqdm
 
-from .constants import BPM_INTERVAL, INSTRUMENT_NOT_FOR_MELODY
+from .constants import BPM_INTERVAL, INSTRUMENT_NOT_FOR_MELODY, NUM_CORES
 
 # Tempo, Key, Time Signature가 너무 자주 바뀌는 경우는 학습에 이용하지 않음
 MAXIMUM_CHANGE = 8
 
 
-def chunk_midi(
+def chunk_midi_map(
+    midifiles,
     steps_per_sec,
     longest_allowed_space,
     minimum_chunk_length,
-    midi_dataset_path,
     chunked_midi_path,
     tmp_midi_dir,
-) -> None:
+):
     def _truncate(f: float, n: int, dtype="str") -> float:
         """Truncates/pads a float f to n decimal places without rounding"""
         s = "{}".format(f)
@@ -37,16 +38,6 @@ def chunk_midi(
 
     TRUNCATE_UNDER_NTH_DECIMAL = len(str(steps_per_sec)) - 1  # 소수점 아래 몇 자리 이후를 버릴지
     STEP_IN_SEC = _truncate(1.0 / steps_per_sec, TRUNCATE_UNDER_NTH_DECIMAL, dtype="float")
-    # Remove drum, FX, woodblock, gunshot, ... among midi instruments
-    midifiles = []
-
-    for i, (dirpath, _, filenames) in enumerate(os.walk(midi_dataset_path)):
-        fileExt = [".mid", ".MID", ".MIDI", ".midi"]
-        for Ext in fileExt:
-            tem = [os.path.join(dirpath, _) for _ in filenames if _.endswith(Ext)]
-            if tem:
-                midifiles += tem
-
     for filename in tqdm(midifiles):
         try:
             midi_data = pretty_midi.PrettyMIDI(filename)
@@ -229,3 +220,36 @@ def chunk_midi(
                         filename_without_extension + f"_{inst_idx}_{instrument.program}_{i}.mid",
                     )
                 )
+
+
+def chunk_midi(
+    steps_per_sec,
+    longest_allowed_space,
+    minimum_chunk_length,
+    midi_dataset_path,
+    chunked_midi_path,
+    tmp_midi_dir,
+):
+
+    midifiles = []
+    for _, (dirpath, _, filenames) in enumerate(os.walk(midi_dataset_path)):
+        fileExt = [".mid", ".MID", ".MIDI", ".midi"]
+        for Ext in fileExt:
+            tem = [os.path.join(dirpath, _) for _ in filenames if _.endswith(Ext)]
+            if tem:
+                midifiles += tem
+
+    split_midi = np.array_split(np.array(midifiles), NUM_CORES)
+    split_midi = [x.tolist() for x in split_midi]
+
+    parmap.map(
+        chunk_midi_map,
+        split_midi,
+        steps_per_sec,
+        longest_allowed_space,
+        minimum_chunk_length,
+        chunked_midi_path,
+        tmp_midi_dir,
+        pm_pbar=True,
+        pm_processes=NUM_CORES,
+    )

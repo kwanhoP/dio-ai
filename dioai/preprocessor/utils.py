@@ -10,6 +10,7 @@ from typing import Any, Dict, List, Optional, Union
 
 import mido
 import numpy as np
+import parmap
 import pretty_midi
 import requests
 from sklearn.model_selection import train_test_split
@@ -34,6 +35,7 @@ from .constants import (
     MEASURES_8,
     MINOR_KEY,
     NO_META_MESSAGE,
+    NUM_CORES,
     PITCH_RANGE_CUT,
     PITCH_RANGE_MAP,
     PITCH_RANGE_START_POINT,
@@ -62,13 +64,29 @@ def parse_midi(midi_path: str, num_measures: int, shift_size: int, parsing_midi_
 
     midifiles = []
 
-    for i, (dirpath, _, filenames) in enumerate(os.walk(midi_path)):
-        fileExt = [".mid", ".MID", ".MIDI", ".midi"]
-        for Ext in fileExt:
-            tem = [os.path.join(dirpath, _) for _ in filenames if _.endswith(Ext)]
+    for _, (dirpath, _, filenames) in enumerate(os.walk(midi_path)):
+        midi_extensions = [".mid", ".MID", ".MIDI", ".midi"]
+        for ext in midi_extensions:
+            tem = [os.path.join(dirpath, _) for _ in filenames if _.endswith(ext)]
             if tem:
                 midifiles += tem
 
+    split_midi = np.array_split(np.array(midifiles), NUM_CORES)
+    split_midi = [x.tolist() for x in split_midi]
+    parmap.map(
+        parse_midi_map,
+        split_midi,
+        num_measures,
+        shift_size,
+        parsing_midi_pth,
+        pm_pbar=True,
+        pm_processes=NUM_CORES,
+    )
+
+
+def parse_midi_map(
+    midifiles: List, num_measures: int, shift_size: int, parsing_midi_pth: Path
+) -> None:
     for filename in tqdm(midifiles):
         midi_data = pretty_midi.PrettyMIDI(filename)
         if len(midi_data.time_signature_changes) == 1:

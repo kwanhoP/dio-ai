@@ -1,3 +1,5 @@
+import multiprocessing
+
 DEFAULT_NUM_BEATS = 4
 CHORD_TRACK_NAME = "chord"
 PITCH_RANGE_CUT = {
@@ -41,6 +43,7 @@ TS_UNKHOWN = 66
 PITCH_RANGE_UNKHOWN = 84
 INST_UNKHOWN = 94
 
+NUM_CORES = multiprocessing.cpu_count()
 
 TIME_SIG_MAP = {
     "3/2": 0,
