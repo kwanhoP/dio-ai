@@ -1053,6 +1053,17 @@ pytz = ">=2017.2"
 test = ["pytest (>=4.0.2)", "pytest-xdist", "hypothesis (>=3.58)"]
 
 [[package]]
+name = "parmap"
+version = "1.5.2"
+description = "map and starmap implementations passing additional arguments and parallelizing if possible"
+category = "main"
+optional = false
+python-versions = "*"
+
+[package.extras]
+progress_bar = ["tqdm (>=4.8.4)"]
+
+[[package]]
 name = "parso"
 version = "0.8.1"
 description = "A Python Parser"
@@ -2033,7 +2044,7 @@ testing = ["coverage (>=5.0.3)", "zope.event", "zope.testing"]
 [metadata]
 lock-version = "1.1"
 python-versions = "^3.7"
-content-hash = "3f0a2fae192af2ef798903fc830852bce5dcc956dd97e6bf0ffbbeba367bd46d"
+content-hash = "ef590b640b231a494d351a957638a01be83bd3394547be5681b87dbc0bcc74cb"
 
 [metadata.files]
 absl-py = [
@@ -2740,6 +2751,10 @@ pandas = [
     {file = "pandas-1.1.5-cp39-cp39-win32.whl", hash = "sha256:c94ff2780a1fd89f190390130d6d36173ca59fcfb3fe0ff596f9a56518191ccb"},
     {file = "pandas-1.1.5-cp39-cp39-win_amd64.whl", hash = "sha256:edda9bacc3843dfbeebaf7a701763e68e741b08fccb889c003b0a52f0ee95782"},
     {file = "pandas-1.1.5.tar.gz", hash = "sha256:f10fc41ee3c75a474d3bdf68d396f10782d013d7f67db99c0efbfd0acb99701b"},
+]
+parmap = [
+    {file = "parmap-1.5.2-py2.py3-none-any.whl", hash = "sha256:1724d30b66c05ce462990fb667e421c27b65331599738dd11e899e4758a88d76"},
+    {file = "parmap-1.5.2.tar.gz", hash = "sha256:a15f33fa0e2a454f29aecfdd5a825c780b7d26d876eb6093476ddf5c47c8f9b9"},
 ]
 parso = [
     {file = "parso-0.8.1-py2.py3-none-any.whl", hash = "sha256:15b00182f472319383252c18d5913b69269590616c947747bc50bf4ac768f410"},

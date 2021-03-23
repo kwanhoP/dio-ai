@@ -21,6 +21,7 @@ torchaudio = "0.7.2"
 transformers = "^4.3.3"
 tensorboard = "^2.4.1"
 wheel = "^0.36.2"
+parmap = "^1.5.2"
 
 [tool.poetry.dev-dependencies]
 pre-commit = "^2.10.0"
