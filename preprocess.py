@@ -182,7 +182,7 @@ def main(args):
         input_meta = []
         target_note = []
         if TARGET_DATASET == "poza":
-            poza_metas = load_poza_meta(URL, 1, 7000)
+            poza_metas = load_poza_meta(URL)
             for poza_meta in poza_metas:
                 metadata = MidiExtractor(
                     pth=None, keyswitch_velocity=None, default_pitch_range=None, poza_meta=poza_meta

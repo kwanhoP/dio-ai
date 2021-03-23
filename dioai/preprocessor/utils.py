@@ -6,7 +6,7 @@ import math
 import os
 import tempfile
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Union
+from typing import Any, Dict, List, Optional, Tuple, Union
 
 import mido
 import numpy as np
@@ -383,11 +383,37 @@ def split_train_val_test(
     return splits
 
 
-def load_poza_meta(url, page: int = 1, per_page: int = 100) -> List[Dict[str, Any]]:
-    res = requests.get(url, params={"page": page, "per_page": per_page, "auto_changed": False})
+def load_poza_meta(request_url: str, per_page: int = 1000) -> List[Dict[str, Any]]:
+    return fetch_samples_from_backoffice(
+        request_url=request_url, per_page=per_page, params={"auto_changed": False}
+    )
+
+
+def fetch_samples_from_backoffice(
+    request_url: str, per_page: int = 100, params: Optional[Dict[str, Any]] = None
+) -> List[Dict[str, Any]]:
+    page = 1
+    result = []
+    finished = False
+    while not finished:
+        has_next, samples = _fetch_samples(request_url, page=page, per_page=per_page, params=params)
+        result.extend(samples)
+        finished = not has_next
+        page += 1
+    return result
+
+
+def _fetch_samples(
+    url, page: int = 1, per_page: int = 100, params: Optional[Dict[str, Any]] = None
+) -> Tuple[bool, List[Dict[str, Any]]]:
+    request_params = {"page": page, "per_page": per_page}
+    if params is not None:
+        request_params.update(params)
+
+    res = requests.get(url, params=request_params)
 
     if res.status_code != http.HTTPStatus.OK:
         raise ValueError("Failed to fetch samples from backoffice")
 
     data = res.json()
-    return data["samples"]["samples"]
+    return data["has_next"], data["samples"]["samples"]
