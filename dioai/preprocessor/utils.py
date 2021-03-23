@@ -2,6 +2,7 @@ import copy
 import enum
 import functools
 import http
+import inspect
 import math
 import os
 import tempfile
@@ -45,7 +46,6 @@ from .constants import (
     UNKNOWN,
 )
 from .container import MidiInfo
-from .exceptions import InvalidMidiError, InvalidMidiErrorMessage
 
 
 class ChordType(str, enum.Enum):
@@ -183,7 +183,7 @@ def get_ts_from_info(ts_type: int) -> [int, int]:
 
 def get_num_measures_from_midi(
     midi_path: Union[str, Path], track_name: Optional[str] = None
-) -> int:
+) -> Union[int, str]:
     """미디에서 마디 수를 계산하는 함수"""
 
     def _get_track(tracks):
@@ -196,23 +196,20 @@ def get_num_measures_from_midi(
     pt_midi = pretty_midi.PrettyMIDI(str(midi_path))
     if not pt_midi.instruments:
         return UNKNOWN
-    else:
-        time_signature: pretty_midi.TimeSignature = pt_midi.time_signature_changes[-1]
 
-        coordination = time_signature.numerator / time_signature.denominator
-        ticks_per_measure = pt_midi.resolution * DEFAULT_NUM_BEATS * coordination
+    time_signature: pretty_midi.TimeSignature = pt_midi.time_signature_changes[-1]
 
-        track = _get_track(pt_midi.instruments)
-        if track is []:
-            raise InvalidMidiError(InvalidMidiErrorMessage.chord_track_not_found.value)
+    coordination = time_signature.numerator / time_signature.denominator
+    ticks_per_measure = pt_midi.resolution * DEFAULT_NUM_BEATS * coordination
 
-        notes = track.notes
+    track = _get_track(pt_midi.instruments)
+    notes = track.notes
 
-        # 노트가 시작하는 마디
-        start_measure = pt_midi.time_to_tick(notes[0].start) // ticks_per_measure
-        measure_start_tick = int(start_measure * ticks_per_measure)
-        duration_tick = pt_midi.time_to_tick(notes[-1].end) - measure_start_tick
-        return math.ceil(duration_tick / ticks_per_measure)
+    # 노트가 시작하는 마디
+    start_measure = pt_midi.time_to_tick(notes[0].start) // ticks_per_measure
+    measure_start_tick = int(start_measure * ticks_per_measure)
+    duration_tick = pt_midi.time_to_tick(notes[-1].end) - measure_start_tick
+    return math.ceil(duration_tick / ticks_per_measure)
 
 
 def get_pitch_range(midi_obj: mido.MidiFile, keyswitch_velocity: int) -> str:
@@ -311,6 +308,101 @@ def get_key_chord_type(
             key_signature = key_signature.lower()
 
     return _divide_key_chord_type(key_signature, _is_major(key_signature))
+
+
+def with_default(default_value: Any = UNKNOWN):
+    def decorator(func):
+        @functools.wraps(func)
+        def wrapper(*args):
+            if len(args) > 1:
+                raise ValueError("Only single argument is accepted")
+            if args[0] is None:
+                return default_value
+            if not isinstance(args[0], mido.MetaMessage):
+                arg_name = inspect.getfullargspec(func).args[0]
+                raise TypeError(f"{arg_name} should be instance of `mido.MetaMessage`")
+            return func(*args)
+
+        return wrapper
+
+    return decorator
+
+
+@with_default()
+def get_bpm_v2(meta_message: Optional[mido.MetaMessage]) -> Union[int, str]:
+    return round(mido.tempo2bpm(getattr(meta_message, "tempo")))
+
+
+@with_default()
+def get_key(meta_message: Optional[mido.MetaMessage]) -> str:
+    def _is_major(_ks):
+        return _ks[CHORD_TYPE_IDX] != MINOR_KEY
+
+    def _divide_key_chord_type(_ks, major):
+        if major:
+            return _ks, ChordType.MAJOR.value
+        return _ks[:CHORD_TYPE_IDX], ChordType.MINOR.value
+
+    key_signature = getattr(meta_message, "key")
+    _key, _chord_type = _divide_key_chord_type(key_signature, _is_major(key_signature))
+    return _key + _chord_type
+
+
+@with_default()
+def get_time_signature_v2(meta_message: Optional[mido.MetaMessage]) -> str:
+    attrs = ("numerator", "denominator")
+    time_signature = "/".join(str(getattr(meta_message, attr)) for attr in attrs)
+    return time_signature
+
+
+def get_pitch_range_v2(
+    midi_obj: mido.MidiFile,
+    default_pitch_range: str,
+    keyswitch_velocity: Optional[int] = None,
+):
+    def _get_avg_note(_tracks: List[pretty_midi.Instrument]):
+        total = 0
+        count = 0
+        for track in _tracks:
+            # pretty_midi 에서 메타 트랙은 Instrument 로 파싱되지 않음
+            if track.name == CHORD_TRACK_NAME:
+                continue
+            for event in track.notes:
+                if event.pitch != 0 and (
+                    keyswitch_velocity is not None and event.velocity != keyswitch_velocity
+                ):
+                    total += event.pitch
+                    count += 1
+        if not count:
+            return None
+        return total / count
+
+    def _get_pitch_range(avg_pitch_range):
+        indexer = {i: k for i, k in enumerate(PITCH_RANGE_CUT.keys())}
+        bins = list(PITCH_RANGE_CUT.values())
+        digitizer = functools.partial(np.digitize, bins=bins)
+        return indexer[digitizer(avg_pitch_range)]
+
+    with tempfile.NamedTemporaryFile(suffix=".mid") as f:
+        midi_obj.save(filename=f.name)
+        pt_midi = pretty_midi.PrettyMIDI(midi_file=f.name)
+
+    avg_note = _get_avg_note(pt_midi.instruments)
+    return _get_pitch_range(avg_note) if avg_note is not None else default_pitch_range
+
+
+def get_inst_from_midi_v2(midi_path: Union[str, Path]) -> Union[int, str]:
+    midi_data = pretty_midi.PrettyMIDI(midi_path)
+    if not midi_data.instruments:
+        return UNKNOWN
+    return midi_data.instruments[0].program
+
+
+def get_meta_message_v2(meta_track: mido.MidiTrack, event_type: str) -> Optional[mido.MetaMessage]:
+    messages = [event for event in copy.deepcopy(meta_track) if event.type == event_type]
+    if not messages:
+        return None
+    return messages.pop()
 
 
 def get_meta_message(meta_track: mido.MidiTrack, event_type: str) -> Union[mido.MetaMessage, str]:
