@@ -5,14 +5,12 @@ from typing import Dict, List
 import mido
 import numpy as np
 import parmap
-from tqdm import tqdm
 
 from .constants import (
     DEFAULT_BPM,
     DEFAULT_KEY,
     DEFAULT_TS,
     KEY_MAP,
-    NUM_CORES,
     PITCH_RANGE_MAP,
     TIME_SIG_MAP,
     UNKNOWN,
@@ -96,7 +94,7 @@ class MidiExtractor:
 
 
 def extract_midi_info_map(chunked_midi: List, encode_tmp_dir: Path) -> None:
-    for i, midi_file in tqdm(enumerate(chunked_midi)):
+    for i, midi_file in enumerate(chunked_midi):
         metadata = MidiExtractor(
             pth=midi_file, keyswitch_velocity=1, default_pitch_range="mid", poza_meta=None
         ).parse()
@@ -118,7 +116,7 @@ def extract_midi_info_map(chunked_midi: List, encode_tmp_dir: Path) -> None:
             continue
 
 
-def extract_midi_info(parsing_midi_pth: Path, encode_tmp_dir: Path) -> None:
+def extract_midi_info(parsing_midi_pth: Path, encode_tmp_dir: Path, num_cores: int) -> None:
     midifiles = []
 
     for _, (dirpath, _, filenames) in enumerate(os.walk(parsing_midi_pth)):
@@ -128,12 +126,12 @@ def extract_midi_info(parsing_midi_pth: Path, encode_tmp_dir: Path) -> None:
             if tem:
                 midifiles += tem
 
-    split_midi = np.array_split(np.array(midifiles), NUM_CORES)
+    split_midi = np.array_split(np.array(midifiles), num_cores)
     split_midi = [x.tolist() for x in split_midi]
     parmap.map(
         extract_midi_info_map,
         split_midi,
         encode_tmp_dir,
         pm_pbar=True,
-        pm_processes=NUM_CORES,
+        pm_processes=num_cores,
     )

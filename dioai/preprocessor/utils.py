@@ -14,7 +14,6 @@ import parmap
 import pretty_midi
 import requests
 from sklearn.model_selection import train_test_split
-from tqdm import tqdm
 
 from .constants import (
     BPM_INTERVAL,
@@ -34,7 +33,6 @@ from .constants import (
     MEASURES_8,
     MINOR_KEY,
     NO_META_MESSAGE,
-    NUM_CORES,
     PITCH_RANGE_CUT,
     PITCH_RANGE_MAP,
     PITCH_RANGE_START_POINT,
@@ -59,7 +57,9 @@ class ChordType(str, enum.Enum):
         return list(cls.__members__.values())
 
 
-def parse_midi(midi_path: str, num_measures: int, shift_size: int, parsing_midi_pth: Path) -> None:
+def parse_midi(
+    midi_path: str, num_measures: int, shift_size: int, parsing_midi_pth: Path, num_cores: int
+) -> None:
 
     midifiles = []
 
@@ -70,7 +70,7 @@ def parse_midi(midi_path: str, num_measures: int, shift_size: int, parsing_midi_
             if tem:
                 midifiles += tem
 
-    split_midi = np.array_split(np.array(midifiles), NUM_CORES)
+    split_midi = np.array_split(np.array(midifiles), num_cores)
     split_midi = [x.tolist() for x in split_midi]
     parmap.map(
         parse_midi_map,
@@ -79,14 +79,14 @@ def parse_midi(midi_path: str, num_measures: int, shift_size: int, parsing_midi_
         shift_size,
         parsing_midi_pth,
         pm_pbar=True,
-        pm_processes=NUM_CORES,
+        pm_processes=num_cores,
     )
 
 
 def parse_midi_map(
     midifiles: List, num_measures: int, shift_size: int, parsing_midi_pth: Path
 ) -> None:
-    for filename in tqdm(midifiles):
+    for filename in midifiles:
         midi_data = pretty_midi.PrettyMIDI(filename)
         if len(midi_data.time_signature_changes) == 1:
             time_signature: pretty_midi.TimeSignature = midi_data.time_signature_changes[-1]
@@ -419,3 +419,35 @@ def _fetch_samples(
 
     data = res.json()
     return data["has_next"], data["samples"]["samples"]
+
+
+def concat_npy(encode_tmp_dir, MODEL, META_LEN):
+    npy_list = os.listdir(encode_tmp_dir)
+
+    input_npy_list = [
+        os.path.join(encode_tmp_dir, npy_file)
+        for npy_file in npy_list
+        if npy_file.startswith("input")
+    ]
+    target_npy_list = [
+        os.path.join(encode_tmp_dir, npy_file)
+        for npy_file in npy_list
+        if npy_file.startswith("target")
+    ]
+
+    input_lst = []
+    target_lst = []
+    for input_npy_pth in input_npy_list:
+        _input_npy = np.load(input_npy_pth, allow_pickle=True)
+        input_lst.append(_input_npy)
+
+    for target_npy_pth in target_npy_list:
+        _target_npy = np.load(target_npy_pth, allow_pickle=True)
+        target_lst.append(_target_npy)
+
+    input_npy = np.array(input_lst)
+    target_npy = np.array(target_lst)
+
+    if MODEL == "GPT":
+        target_npy = target_npy + META_LEN
+    return input_npy, target_npy

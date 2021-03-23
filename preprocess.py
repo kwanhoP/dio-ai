@@ -1,18 +1,18 @@
 # 미디 전처리 스크립트 (midi -> tfrecord)
 
 import argparse
+import logging
 import os
+import warnings
 from pathlib import Path
+from typing import List
 
 import numpy as np
 
 from dioai.preprocessor.chunk_midi import chunk_midi
 from dioai.preprocessor.constants import META_LEN
 from dioai.preprocessor.extract_info import MidiExtractor, extract_midi_info
-from dioai.preprocessor.utils import load_poza_meta, parse_midi, split_train_val_test
-
-# 4마디, 8마디 단위로 데이터화
-STANDARD_WINDOW_SIZE = [4, 8]
+from dioai.preprocessor.utils import concat_npy, load_poza_meta, parse_midi, split_train_val_test
 
 # Pozadataset URL
 URL = "https://backoffice.pozalabs.com/api/samples"
@@ -67,30 +67,35 @@ def get_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--chunk_midi_dir",
         type=str,
+        default="chunked",
         required=True,
         help="전처리 후 만들어진 각 chunk 는 하나의 midi파일로 저장되는데, 이러한 midi 파일들이 저장되는 폴더",
     )
     parser.add_argument(
         "--tmp_midi_dir",
         type=str,
+        default="tmp",
         required=True,
         help="미디 파일의 Tempo가 달라지는 경우 노트가 밀리는 현상 해결을 위해 평균 Tempo값으로 고정되어 저장되는 폴더",
     )
     parser.add_argument(
-        "--window_chunk_dir",
+        "--parse_midi_dir",
         type=str,
+        default="parsed",
         required=True,
-        help="chunked된 미디 파일을 마디 길이에 맞게 Augment 이후 저장되는 폴더",
+        help="chunked된 미디 파일을 마디 길이에 맞게 파싱, Augment 이후 저장되는 폴더",
     )
     parser.add_argument(
         "--encode_npy_dir",
         type=str,
+        default="output_npy",
         required=True,
         help="저장된 npy 데이터를 합치고 train_test_split 해서 최종 저장하는 폴더",
     )
     parser.add_argument(
         "--encode_tmp_dir",
         type=str,
+        default="tmp_npy",
         required=True,
         help="인코딩 된 미디 데이터를 npy 형식으로 임시 저장하는 폴더",
     )
@@ -100,10 +105,25 @@ def get_parser() -> argparse.ArgumentParser:
         default="GPT",
         help="모델 구조에 따른 전처리 형식 지정 GPT: (meta + note_seq) 합쳐서 하나의 시퀀스로 학습",
     )
+    parser.add_argument(
+        "--bar_window_size",
+        type=List,
+        default=[4, 8],
+        help="파싱할 미디 마디 수 지정",
+    )
+    parser.add_argument(
+        "--num_cores",
+        type=int,
+        default=10,
+        choices=range(1, 20),
+        help="병렬 처리 시 사용할 프로세스 수 지정",
+    )
     return parser
 
 
 def main(args):
+    main_logger = logging.getLogger("preprocess/main")
+    main_logger.setLevel(logging.DEBUG)
     # args
     STEPS_PER_SEC = args.steps_per_sec
     LONGEST_ALLOWED_SPACE = args.longest_allowed_space
@@ -112,70 +132,73 @@ def main(args):
     TEST_RATIO = args.test_ratio
     TARGET_DATASET = args.target_dataset
     MODEL = args.model
+    STANDARD_WINDOW_SIZE = args.bar_window_size
+    num_cores = args.num_cores
 
     # sub-path parsing
-    midi_dataset_paths = args.source_midi_dir
+    midi_dataset_paths = Path(args.source_midi_dir)
     subset_dir = os.listdir(midi_dataset_paths)
     for subset in subset_dir:
-        print(f"------Start processing: {subset}-------")
-        midi_dataset_path = os.path.join(midi_dataset_paths, subset)
+        midi_dataset_path = midi_dataset_paths / subset
+
         # 이미 전처리 완료된 subset 폴더는 건너 뜀
-        if os.path.exists(os.path.join(midi_dataset_path, args.encode_npy_dir, "input_train.npy")):
+        encode_npy_pth = midi_dataset_path / args.encode_npy_dir / "input_train.npy"
+        if encode_npy_pth.exists():
+            main_logger.info(f"------Already processed: {subset}-------")
             continue
 
-        chunked_midi_path = os.path.join(midi_dataset_path, args.chunk_midi_dir)
-        if not os.path.exists(chunked_midi_path):
-            os.makedirs(chunked_midi_path)
-
-        window_chunked_dir = os.path.join(midi_dataset_path, args.window_chunk_dir)
-        if not os.path.exists(window_chunked_dir):
-            os.makedirs(window_chunked_dir)
-
-        tmp_midi_dir = os.path.join(midi_dataset_path, args.tmp_midi_dir)
-        if not os.path.exists(tmp_midi_dir):
-            os.makedirs(tmp_midi_dir)
-
-        encode_npy_dir = os.path.join(midi_dataset_path, args.encode_npy_dir)
-        if not os.path.exists(encode_npy_dir):
-            os.makedirs(encode_npy_dir)
-
-        encode_tmp_dir = os.path.join(midi_dataset_path, args.encode_tmp_dir)
-        if not os.path.exists(encode_tmp_dir):
-            os.makedirs(encode_tmp_dir)
+        main_logger.info(f"------Start processing: {subset}-------")
+        for args_pth in [
+            args.chunk_midi_dir,
+            args.parse_midi_dir,
+            args.tmp_midi_dir,
+            args.encode_npy_dir,
+            args.encode_tmp_dir,
+        ]:
+            pth = midi_dataset_path / args_pth
+            if not pth.exists():
+                os.makedirs(pth)
+            if args_pth == "chunked":
+                chunk_midi_dir = pth
+            elif args_pth == "parsed":
+                parsing_midi_dir = pth
+            elif args_pth == "tmp":
+                tmp_midi_dir = pth
+            elif args_pth == "output_npy":
+                encode_npy_dir = pth
+            elif args_pth == "npy_tmp":
+                encode_tmp_dir = pth
 
         # chunk
         if TARGET_DATASET != "poza":
-            print("---------------------------------")
-            print("-----------START CHUNK-----------")
-            print("---------------------------------")
+            main_logger.info("-----------START CHUNK-----------")
             chunk_midi(
                 steps_per_sec=STEPS_PER_SEC,
                 longest_allowed_space=LONGEST_ALLOWED_SPACE,
                 minimum_chunk_length=MINIMUM_CHUNK_LENGTH,
                 midi_dataset_path=midi_dataset_path,
-                chunked_midi_path=chunked_midi_path,
+                chunked_midi_path=chunk_midi_dir,
                 tmp_midi_dir=tmp_midi_dir,
+                num_cores=num_cores,
             )
 
+        # parsing
         if TARGET_DATASET != "poza":
-            parsing_midi_pth = Path(window_chunked_dir)
-            print("---------------------------------")
-            print("----------START PARSING----------")
-            print("---------------------------------")
+            main_logger.info("----------START PARSING----------")
             for window_size in STANDARD_WINDOW_SIZE:
                 parse_midi(
-                    midi_path=chunked_midi_path,
+                    midi_path=chunk_midi_dir,
                     num_measures=window_size,
                     shift_size=1,
-                    parsing_midi_pth=parsing_midi_pth,
+                    parsing_midi_pth=parsing_midi_dir,
+                    num_cores=num_cores,
                 )
 
-        if not os.listdir(parsing_midi_pth):
+        # extract
+        if not os.listdir(parsing_midi_dir):
             print("정보를 추출할 미디 파일이 없습니다.")
             continue
-        print("---------------------------------")
-        print("-----------START EXTRACT---------")
-        print("---------------------------------")
+        main_logger.info("-----------START EXTRACT---------")
 
         if TARGET_DATASET == "poza":
             poza_metas = load_poza_meta(URL)
@@ -186,47 +209,21 @@ def main(args):
                 print(metadata)  # test용 추후 삭제 예정
 
         else:
-            extract_midi_info(parsing_midi_pth, encode_tmp_dir)
+            extract_midi_info(parsing_midi_dir, encode_tmp_dir, num_cores)
 
-            # 저장된 npy 불러서 합쳐서 저장
-            npy_list = os.listdir(encode_tmp_dir)
+            # load, concat and save npy
+            input_npy, target_npy = concat_npy(encode_tmp_dir, MODEL, META_LEN)
 
-            input_npy_list = [
-                os.path.join(encode_tmp_dir, npy_file)
-                for npy_file in npy_list
-                if npy_file.startswith("input")
-            ]
-            target_npy_list = [
-                os.path.join(encode_tmp_dir, npy_file)
-                for npy_file in npy_list
-                if npy_file.startswith("target")
-            ]
-
-            input_lst = []
-            target_lst = []
-            for input_npy_pth in input_npy_list:
-                _input_npy = np.load(input_npy_pth, allow_pickle=True)
-                input_lst.append(_input_npy)
-
-            for target_npy_pth in target_npy_list:
-                _target_npy = np.load(target_npy_pth, allow_pickle=True)
-                target_lst.append(_target_npy)
-
-            input_npy = np.array(input_lst)
-            target_npy = np.array(target_lst)
-
-            if MODEL == "GPT":
-                target_npy = target_npy + META_LEN
-
-            # split data
+            # split and save npy(results)
             splits = split_train_val_test(input_npy, target_npy, VAL_RATIO, TEST_RATIO)
 
             for split_name, value in splits.items():
                 np.save(os.path.join(encode_npy_dir, split_name), value)
 
-            print(f"------Finish processing: {subset}-------")
+            main_logger.info(f"------Finish processing: {subset}-------")
 
 
 if __name__ == "__main__":
     args, _ = get_parser().parse_known_args()  # noqa: F403
+    warnings.filterwarnings("ignore")
     main(args)
