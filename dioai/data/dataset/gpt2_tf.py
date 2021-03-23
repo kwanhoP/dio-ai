@@ -34,7 +34,11 @@ class GPT2MetaToNoteTFDataset:
         dataset = dataset.padded_batch(
             batch_size=batch_size,
             padded_shapes={"input_ids": [None], "attention_mask": [None], "labels": [None]},
-            padding_values=tf.constant(pad_id, dtype=tf.int64),
+            padding_values={
+                "input_ids": tf.constant(pad_id, dtype=tf.int64),
+                "attention_mask": tf.constant(0, dtype=tf.int64),
+                "labels": tf.constant(pad_id, dtype=tf.int64),
+            },
         )
         if shuffle:
             dataset = dataset.shuffle(shuffle_buffer_size)
