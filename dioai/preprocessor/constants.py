@@ -43,7 +43,7 @@ TS_UNKHOWN = 66
 PITCH_RANGE_UNKHOWN = 84
 INST_UNKHOWN = 94
 
-NUM_CORES = multiprocessing.cpu_count()
+NUM_CORES = multiprocessing.cpu_count() - 10  # core 전부 다 쓰면 병목현상 보임
 
 TIME_SIG_MAP = {
     "3/2": 0,

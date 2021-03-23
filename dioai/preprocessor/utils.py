@@ -23,7 +23,6 @@ from .constants import (
     CHORD_TRACK_NAME,
     CHORD_TYPE_IDX,
     DEFAULT_NUM_BEATS,
-    DEFAULT_PITCH_RANGE,
     INST_PROGRAM_MAP,
     INST_START_POINT,
     INST_UNKHOWN,
@@ -242,12 +241,15 @@ def get_pitch_range(midi_obj: mido.MidiFile, keyswitch_velocity: int) -> str:
 
     def _get_pitch_range(avg_pitch_range):
         if avg_pitch_range == UNKNOWN:
-            range = DEFAULT_PITCH_RANGE
+            return UNKNOWN
         else:
             indexer = {i: k for i, k in enumerate(PITCH_RANGE_CUT.keys())}
             bins = list(PITCH_RANGE_CUT.values())
             digitizer = functools.partial(np.digitize, bins=bins)
-            range = indexer[digitizer(avg_pitch_range)]
+            try:
+                range = indexer[digitizer(avg_pitch_range)]
+            except KeyError:
+                return UNKNOWN
         return PITCH_RANGE_MAP[range]
 
     with tempfile.NamedTemporaryFile(suffix=".mid") as f:

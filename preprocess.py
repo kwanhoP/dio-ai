@@ -5,17 +5,11 @@ import os
 from pathlib import Path
 
 import numpy as np
-from tqdm import tqdm
 
 from dioai.preprocessor.chunk_midi import chunk_midi
-from dioai.preprocessor.constants import DEFAULT_BPM, DEFAULT_KEY, DEFAULT_TS, META_LEN, UNKNOWN
-from dioai.preprocessor.extract_info import MidiExtractor
-from dioai.preprocessor.utils import (
-    encode_meta_info,
-    load_poza_meta,
-    parse_midi,
-    split_train_val_test,
-)
+from dioai.preprocessor.constants import META_LEN
+from dioai.preprocessor.extract_info import MidiExtractor, extract_midi_info
+from dioai.preprocessor.utils import load_poza_meta, parse_midi, split_train_val_test
 
 # 4마디, 8마디 단위로 데이터화
 STANDARD_WINDOW_SIZE = [4, 8]
@@ -85,14 +79,20 @@ def get_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--window_chunk_dir",
         type=str,
-        default=False,
+        required=True,
         help="chunked된 미디 파일을 마디 길이에 맞게 Augment 이후 저장되는 폴더",
     )
     parser.add_argument(
         "--encode_npy_dir",
         type=str,
-        default=True,
-        help="인코딩 된 미디 데이터를 npy 형식으로 저장하는 폴더",
+        required=True,
+        help="저장된 npy 데이터를 합치고 train_test_split 해서 최종 저장하는 폴더",
+    )
+    parser.add_argument(
+        "--encode_tmp_dir",
+        type=str,
+        required=True,
+        help="인코딩 된 미디 데이터를 npy 형식으로 임시 저장하는 폴더",
     )
     parser.add_argument(
         "--model",
@@ -120,7 +120,7 @@ def main(args):
         print(f"------Start processing: {subset}-------")
         midi_dataset_path = os.path.join(midi_dataset_paths, subset)
         # 이미 전처리 완료된 subset 폴더는 건너 뜀
-        if os.path.exists(os.path.join(midi_dataset_path, args.encode_npy_dir, "input.npy")):
+        if os.path.exists(os.path.join(midi_dataset_path, args.encode_npy_dir, "input_train.npy")):
             continue
 
         chunked_midi_path = os.path.join(midi_dataset_path, args.chunk_midi_dir)
@@ -138,6 +138,11 @@ def main(args):
         encode_npy_dir = os.path.join(midi_dataset_path, args.encode_npy_dir)
         if not os.path.exists(encode_npy_dir):
             os.makedirs(encode_npy_dir)
+
+        encode_tmp_dir = os.path.join(midi_dataset_path, args.encode_tmp_dir)
+        if not os.path.exists(encode_tmp_dir):
+            os.makedirs(encode_tmp_dir)
+
         # chunk
         if TARGET_DATASET != "poza":
             print("---------------------------------")
@@ -165,22 +170,13 @@ def main(args):
                     parsing_midi_pth=parsing_midi_pth,
                 )
 
-            # extract & encode
-            chunked_midi = []
-
-            for _, (dirpath, _, filenames) in enumerate(os.walk(parsing_midi_pth)):
-                file_ext = [".mid", ".MID", ".MIDI", ".midi"]
-                for Ext in file_ext:
-                    tem = [os.path.join(dirpath, _) for _ in filenames if _.endswith(Ext)]
-                    if tem:
-                        chunked_midi += tem
-
+        if not os.listdir(parsing_midi_pth):
+            print("정보를 추출할 미디 파일이 없습니다.")
+            continue
         print("---------------------------------")
         print("-----------START EXTRACT---------")
         print("---------------------------------")
 
-        input_meta = []
-        target_note = []
         if TARGET_DATASET == "poza":
             poza_metas = load_poza_meta(URL)
             for poza_meta in poza_metas:
@@ -190,28 +186,34 @@ def main(args):
                 print(metadata)  # test용 추후 삭제 예정
 
         else:
-            for midi_file in tqdm(chunked_midi):
-                metadata = MidiExtractor(
-                    pth=midi_file, keyswitch_velocity=1, default_pitch_range="mid", poza_meta=None
-                ).parse()
-                if (
-                    (metadata.bpm == DEFAULT_BPM)
-                    and (metadata.audio_key == DEFAULT_KEY)
-                    and (metadata.time_signature == DEFAULT_TS)
-                ):
-                    metadata.bpm = UNKNOWN
-                    metadata.audio_key = UNKNOWN
-                    metadata.time_signature = UNKNOWN
-                meta = encode_meta_info(metadata)
-                if meta:
-                    input_meta.append(np.array(meta))
-                    target_note.append(np.array(metadata.note_seq))
-                else:
-                    continue
+            extract_midi_info(parsing_midi_pth, encode_tmp_dir)
 
-            input_npy = np.array(input_meta, dtype=object)
-            target_npy = np.array(target_note, dtype=object)
-            print(input_npy.shape, target_npy.shape)
+            # 저장된 npy 불러서 합쳐서 저장
+            npy_list = os.listdir(encode_tmp_dir)
+
+            input_npy_list = [
+                os.path.join(encode_tmp_dir, npy_file)
+                for npy_file in npy_list
+                if npy_file.startswith("input")
+            ]
+            target_npy_list = [
+                os.path.join(encode_tmp_dir, npy_file)
+                for npy_file in npy_list
+                if npy_file.startswith("target")
+            ]
+
+            input_lst = []
+            target_lst = []
+            for input_npy_pth in input_npy_list:
+                _input_npy = np.load(input_npy_pth, allow_pickle=True)
+                input_lst.append(_input_npy)
+
+            for target_npy_pth in target_npy_list:
+                _target_npy = np.load(target_npy_pth, allow_pickle=True)
+                target_lst.append(_target_npy)
+
+            input_npy = np.array(input_lst)
+            target_npy = np.array(target_lst)
 
             if MODEL == "GPT":
                 target_npy = target_npy + META_LEN

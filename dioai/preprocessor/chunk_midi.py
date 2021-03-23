@@ -241,7 +241,6 @@ def chunk_midi(
 
     split_midi = np.array_split(np.array(midifiles), NUM_CORES)
     split_midi = [x.tolist() for x in split_midi]
-
     parmap.map(
         chunk_midi_map,
         split_midi,

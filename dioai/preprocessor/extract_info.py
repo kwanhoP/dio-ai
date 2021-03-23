@@ -1,11 +1,26 @@
-from typing import Dict
+import os
+from pathlib import Path
+from typing import Dict, List
 
 import mido
+import numpy as np
+import parmap
+from tqdm import tqdm
 
-from .constants import KEY_MAP, PITCH_RANGE_MAP, TIME_SIG_MAP
+from .constants import (
+    DEFAULT_BPM,
+    DEFAULT_KEY,
+    DEFAULT_TS,
+    KEY_MAP,
+    NUM_CORES,
+    PITCH_RANGE_MAP,
+    TIME_SIG_MAP,
+    UNKNOWN,
+)
 from .container import MidiInfo
 from .encoder import encode_midi
 from .utils import (
+    encode_meta_info,
     get_bpm,
     get_inst_from_midi,
     get_key_chord_type,
@@ -78,3 +93,47 @@ class MidiExtractor:
             note_seq=None,
         )
         return midi_info
+
+
+def extract_midi_info_map(chunked_midi: List, encode_tmp_dir: Path) -> None:
+    for i, midi_file in tqdm(enumerate(chunked_midi)):
+        metadata = MidiExtractor(
+            pth=midi_file, keyswitch_velocity=1, default_pitch_range="mid", poza_meta=None
+        ).parse()
+        if (
+            (metadata.bpm == DEFAULT_BPM)
+            and (metadata.audio_key == DEFAULT_KEY)
+            and (metadata.time_signature == DEFAULT_TS)
+        ):
+            metadata.bpm = UNKNOWN
+            metadata.audio_key = UNKNOWN
+            metadata.time_signature = UNKNOWN
+        meta = encode_meta_info(metadata)
+        if meta:
+            input_npy = np.array(np.array(meta), dtype=object)
+            target_npy = np.array(np.array(metadata.note_seq), dtype=object)
+            np.save(os.path.join(encode_tmp_dir, f"input_{i}"), input_npy)
+            np.save(os.path.join(encode_tmp_dir, f"target_{i}"), target_npy)
+        else:
+            continue
+
+
+def extract_midi_info(parsing_midi_pth: Path, encode_tmp_dir: Path) -> None:
+    midifiles = []
+
+    for _, (dirpath, _, filenames) in enumerate(os.walk(parsing_midi_pth)):
+        midi_extensions = [".mid", ".MID", ".MIDI", ".midi"]
+        for ext in midi_extensions:
+            tem = [os.path.join(dirpath, _) for _ in filenames if _.endswith(ext)]
+            if tem:
+                midifiles += tem
+
+    split_midi = np.array_split(np.array(midifiles), NUM_CORES)
+    split_midi = [x.tolist() for x in split_midi]
+    parmap.map(
+        extract_midi_info_map,
+        split_midi,
+        encode_tmp_dir,
+        pm_pbar=True,
+        pm_processes=NUM_CORES,
+    )
