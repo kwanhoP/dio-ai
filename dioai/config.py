@@ -7,7 +7,7 @@ from dataclasses import asdict, dataclass
 from pathlib import Path
 from typing import Any, Dict, Union
 
-from transformers import EvaluationStrategy, GPT2Config, PretrainedConfig, TrainingArguments
+from transformers import GPT2Config, PretrainedConfig, TrainingArguments
 
 
 @dataclass
@@ -39,7 +39,6 @@ class TransformersConfig:
             **data.pop("training"),
             output_dir=str(output_root_dir.joinpath("checkpoints", dir_name)),
             logging_dir=str(output_root_dir.joinpath("runs", dir_name)),
-            evaluation_strategy=EvaluationStrategy.STEPS,
         )
         return cls(**data, model=model_config, training=training_config)
 

@@ -69,8 +69,12 @@ def main(args):
         model=model_factory.create(config.model_name, config.model),
         args=config.training,
         train_dataset=dataset_factory.create(config=config, split=config.train_split),
-        eval_dataset=dataset_factory.create(
-            config=config, split=config.eval_split, training=False, shuffle=False
+        eval_dataset=(
+            dataset_factory.create(
+                config=config, split=config.eval_split, training=False, shuffle=False
+            )
+            if config.training.evaluation_strategy != transformers.EvaluationStrategy.NO
+            else None
         ),
     )
     trainer.train(
