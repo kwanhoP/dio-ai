@@ -44,7 +44,6 @@ def chunk_midi_map(
             OSError,
             KeyError,
             ValueError,
-            mido.midifiles.meta.KeySignatureError,
             EOFError,
             IndexError,
         ):
@@ -91,10 +90,12 @@ def chunk_midi_map(
             for message in track:
                 if message.type == "set_tempo":
                     message.tempo = mido.bpm2tempo(average_tempo)
-
-        mido_object.save(
-            os.path.join(tmp_midi_dir, filename_without_extension + f"_{average_tempo}.mid")
-        )
+        try:
+            mido_object.save(
+                os.path.join(tmp_midi_dir, filename_without_extension + f"_{average_tempo}.mid")
+            )
+        except (AttributeError, ValueError):
+            continue
         midi_data = pretty_midi.PrettyMIDI(
             os.path.join(tmp_midi_dir, filename_without_extension + f"_{average_tempo}.mid")
         )

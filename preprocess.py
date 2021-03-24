@@ -124,6 +124,13 @@ def get_parser() -> argparse.ArgumentParser:
 def main(args):
     main_logger = logging.getLogger("preprocess/main")
     main_logger.setLevel(logging.DEBUG)
+    formatter = logging.Formatter("%(asctime)s - %(name)s - %(levelname)s - %(message)s")
+    stream_hander = logging.StreamHandler()
+    stream_hander.setFormatter(formatter)
+    main_logger.handlers = []
+    main_logger.propagate = False
+    main_logger.addHandler(stream_hander)
+
     # args
     STEPS_PER_SEC = args.steps_per_sec
     LONGEST_ALLOWED_SPACE = args.longest_allowed_space
