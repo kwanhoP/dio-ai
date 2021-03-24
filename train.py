@@ -2,6 +2,7 @@ import argparse
 from pathlib import Path
 from typing import Union
 
+import sentry_sdk
 import tensorflow as tf
 import transformers
 
@@ -52,6 +53,11 @@ def load_config(config_path: Union[str, Path]) -> TransformersConfig:
 
 
 def main(args):
+    sentry_sdk.init(
+        "https://11345898b114459fb6eb068986b66eea@o226139.ingest.sentry.io/5690046",
+        traces_sample_rate=1.0,
+    )
+
     config = load_config(Path(args.config_path).expanduser())
 
     limit_tf_gpu_memory(config.tf_gpu_memory_limit)

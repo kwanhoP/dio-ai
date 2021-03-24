@@ -18,6 +18,7 @@ class GPT2MetaToNoteTFDataset:
     def build(
         self,
         batch_size: int,
+        max_length: int,
         training: bool = True,
         shuffle: bool = False,
         shuffle_buffer_size: int = 10000,
@@ -31,6 +32,7 @@ class GPT2MetaToNoteTFDataset:
                 "labels": tf.TensorSpec(shape=(None,), dtype=tf.int64),
             },
         )
+        dataset = dataset.filter(lambda x: tf.shape(x["input_ids"])[0] <= max_length)
         dataset = dataset.padded_batch(
             batch_size=batch_size,
             padded_shapes={"input_ids": [None], "attention_mask": [None], "labels": [None]},

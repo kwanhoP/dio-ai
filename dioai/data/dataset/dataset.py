@@ -126,6 +126,7 @@ class GPT2MetaToNoteDataset(IterableDataset):
         self.tf_dataset = GPT2MetaToNoteTFDataset(self.config.data_dir, split=split)
         self.tf_dataset_build_args = dict(
             batch_size=self.config.batch_size,
+            max_length=self.config.model.n_ctx,
             pad_id=self.config.model.pad_token_id,
             training=training,
             shuffle=shuffle,

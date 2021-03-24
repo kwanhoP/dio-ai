@@ -23,6 +23,7 @@ tensorboard = "^2.4.1"
 wheel = "^0.36.2"
 parmap = "^1.5.2"
 pydantic = "^1.8.1"
+sentry-sdk = "^1.0.0"
 
 [tool.poetry.dev-dependencies]
 pre-commit = "^2.10.0"
