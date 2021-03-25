@@ -48,6 +48,8 @@ class GPT2MetaToNoteTFDataset:
             dataset = dataset.repeat()
             dataset = dataset.shuffle(batch_size)
         else:
+            dataset = dataset.shuffle(shuffle_buffer_size, seed=1203)
+            dataset = dataset.take(5000)
             dataset = dataset.unbatch()
         dataset = dataset.prefetch(2)
         return dataset
