@@ -10,9 +10,9 @@ from typing import List
 import numpy as np
 
 from dioai.preprocessor.chunk_midi import chunk_midi
-from dioai.preprocessor.constants import META_LEN
 from dioai.preprocessor.extract_info import MidiExtractor, extract_midi_info
 from dioai.preprocessor.utils import concat_npy, load_poza_meta, parse_midi, split_train_val_test
+from dioai.preprocessor.utils.constants import META_LEN
 
 # Pozadataset URL
 URL = "https://backoffice.pozalabs.com/api/samples"

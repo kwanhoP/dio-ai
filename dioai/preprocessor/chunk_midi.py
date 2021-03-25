@@ -5,7 +5,7 @@ import numpy as np
 import parmap
 import pretty_midi
 
-from .constants import BPM_INTERVAL, INSTRUMENT_NOT_FOR_MELODY
+from dioai.preprocessor.utils.constants import BPM_INTERVAL, INSTRUMENT_NOT_FOR_MELODY
 
 # Tempo, Key, Time Signature가 너무 자주 바뀌는 경우는 학습에 이용하지 않음
 MAXIMUM_CHANGE = 8

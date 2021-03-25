@@ -6,18 +6,8 @@ import mido
 import numpy as np
 import parmap
 
-from .constants import (
-    DEFAULT_BPM,
-    DEFAULT_KEY,
-    DEFAULT_TS,
-    KEY_MAP,
-    PITCH_RANGE_MAP,
-    TIME_SIG_MAP,
-    UNKNOWN,
-)
-from .container import MidiInfo
-from .encoder import encode_midi
-from .utils import (
+from dioai.preprocessor.encoder import encode_midi
+from dioai.preprocessor.utils import (
     encode_meta_info,
     get_bpm,
     get_inst_from_midi,
@@ -27,6 +17,16 @@ from .utils import (
     get_pitch_range,
     get_time_signature,
 )
+from dioai.preprocessor.utils.constants import (
+    DEFAULT_BPM,
+    DEFAULT_KEY,
+    DEFAULT_TS,
+    KEY_MAP,
+    PITCH_RANGE_MAP,
+    TIME_SIG_MAP,
+    UNKNOWN,
+)
+from dioai.preprocessor.utils.container import MidiInfo
 
 
 class MidiExtractor:

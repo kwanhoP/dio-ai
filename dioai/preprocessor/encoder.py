@@ -10,9 +10,15 @@ from magenta.models.score2perf.music_encoders import (
 )
 from tensor2tensor.data_generators import text_encoder
 
-from .constants import BPM_INTERVAL, MAX_PITCH, MIN_PITCH, NUM_VELOCITY_BINS, STEPS_PER_SECOND
-from .container import MidiInfo
-from .utils import get_inst_from_info, get_ts_from_info
+from dioai.preprocessor.utils import get_inst_from_info, get_ts_from_info
+from dioai.preprocessor.utils.constants import (
+    BPM_INTERVAL,
+    MAX_PITCH,
+    MIN_PITCH,
+    NUM_VELOCITY_BINS,
+    STEPS_PER_SECOND,
+)
+from dioai.preprocessor.utils.container import MidiInfo
 
 # https://github.com/magenta/magenta/blob/master/magenta/models/score2perf/score2perf.py#L39-L42
 
@@ -35,7 +41,9 @@ def decode_midi(output_path, midi_info: MidiInfo, filename):
     decoder = MidiPerformanceEncoderWithInstrument()
     output_path = Path(output_path)
     decoder.decode(
-        output_path=output_path, midi_info=midi_info, origin_name=filename,
+        output_path=output_path,
+        midi_info=midi_info,
+        origin_name=filename,
     )
 
 
