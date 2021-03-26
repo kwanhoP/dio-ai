@@ -1,5 +1,5 @@
 from dataclasses import dataclass
-from typing import List
+from typing import List, Union
 
 from pydantic import BaseModel
 
@@ -19,9 +19,9 @@ class MidiInfo:
 
 
 class MidiMeta(BaseModel):
-    bpm: int
+    bpm: Union[int, str]
     audio_key: str
     time_signature: str
     pitch_range: str
-    num_measure: int
+    num_measures: Union[int, str]
     inst: str

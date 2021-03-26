@@ -28,6 +28,7 @@ boto3 = "^1.17.35"
 
 [tool.poetry.dev-dependencies]
 pre-commit = "^2.10.0"
+pytest = "^6.2.2"
 
 [tool.black]
 line-length = 100

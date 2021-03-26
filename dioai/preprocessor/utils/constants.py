@@ -1,4 +1,12 @@
+import enum
 import multiprocessing
+
+
+class DefaultValue(int, enum.Enum):
+    BPM = 120
+    AUDIO_KEY = "cmajor"
+    TIME_SIGNATURE = "4/4"
+
 
 DEFAULT_NUM_BEATS = 4
 CHORD_TRACK_NAME = "chord"

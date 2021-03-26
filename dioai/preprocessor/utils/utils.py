@@ -355,11 +355,7 @@ def get_time_signature_v2(meta_message: Optional[mido.MetaMessage]) -> str:
     return time_signature
 
 
-def get_pitch_range_v2(
-    midi_obj: mido.MidiFile,
-    default_pitch_range: str,
-    keyswitch_velocity: Optional[int] = None,
-):
+def get_pitch_range_v2(midi_obj: mido.MidiFile, keyswitch_velocity: Optional[int] = None) -> str:
     def _get_avg_note(_tracks: List[pretty_midi.Instrument]):
         total = 0
         count = 0
@@ -388,7 +384,9 @@ def get_pitch_range_v2(
         pt_midi = pretty_midi.PrettyMIDI(midi_file=f.name)
 
     avg_note = _get_avg_note(pt_midi.instruments)
-    return _get_pitch_range(avg_note) if avg_note is not None else default_pitch_range
+    if avg_note is None:
+        return UNKNOWN
+    return _get_pitch_range(avg_note)
 
 
 def get_inst_from_midi_v2(midi_path: Union[str, Path]) -> Union[int, str]:
