@@ -2,7 +2,7 @@ import enum
 import multiprocessing
 
 
-class DefaultValue(int, enum.Enum):
+class DefaultValue(enum.Enum):
     BPM = 120
     AUDIO_KEY = "cmajor"
     TIME_SIGNATURE = "4/4"

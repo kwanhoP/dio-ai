@@ -61,9 +61,9 @@ class MidiMetaParser:
 
 def _is_all_default_meta(midi_meta: MidiMeta) -> bool:
     return (
-        midi_meta.bpm == constants.DefaultValue.BPM
-        and midi_meta.audio_key == constants.DefaultValue.AUDIO_KEY
-        and midi_meta.time_signature == constants.DefaultValue.TIME_SIGNATURE
+        midi_meta.bpm == constants.DefaultValue.BPM.value
+        and midi_meta.audio_key == constants.DefaultValue.AUDIO_KEY.value
+        and midi_meta.time_signature == constants.DefaultValue.TIME_SIGNATURE.value
     )
 
 

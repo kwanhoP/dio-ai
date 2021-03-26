@@ -36,8 +36,8 @@ def test_encode():
         inst="0",
     )
     expected = [
-        # 40 + Offset.BPM (1)
-        41,
+        # 39 + Offset.BPM (1)
+        40,
         # 0 + Offset.AUDIO_KEY (42)
         42,
         # 4 + Offset.TIME_SIGNATURE (67)

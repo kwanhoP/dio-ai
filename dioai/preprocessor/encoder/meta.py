@@ -79,7 +79,8 @@ def add_offset(func):
 @add_offset
 @encode_unknown()
 def encode_bpm(bpm: Union[int, str]) -> int:
-    return min(bpm, constants.MAX_BPM) // constants.BPM_INTERVAL
+    # 인코딩 결괏값이 40이면 Offset을 더했을 때 AUDIO_KEY Unknown으로 잘못 인코딩 됨
+    return min(bpm, constants.MAX_BPM - 1) // constants.BPM_INTERVAL
 
 
 @register_encoder
