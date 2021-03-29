@@ -87,14 +87,7 @@ def get_parser() -> argparse.ArgumentParser:
 
 
 def main(args):
-    main_logger = logging.getLogger("preprocess/main")
-    main_logger.setLevel(logging.DEBUG)
-    formatter = logging.Formatter("%(asctime)s - %(name)s - %(levelname)s - %(message)s")
-    stream_hander = logging.StreamHandler()
-    stream_hander.setFormatter(formatter)
-    main_logger.handlers = []
-    main_logger.propagate = False
-    main_logger.addHandler(stream_hander)
+    logger = logging.getLogger("dioai.preprocessor")
 
     # args
     STEPS_PER_SEC = args.steps_per_sec
@@ -116,10 +109,10 @@ def main(args):
         # 이미 전처리 완료된 subset 폴더는 건너 뜀
         encode_npy_pth = midi_dataset_path / args.encode_npy_dir / "input_train.npy"
         if encode_npy_pth.exists():
-            main_logger.info(f"------Already processed: {subset}-------")
+            logger.info(f"------Already processed: {subset}-------")
             continue
 
-        main_logger.info(f"------Start processing: {subset}-------")
+        logger.info(f"------Start processing: {subset}-------")
         for sub_dir in [
             "chunked",
             "parsed",
@@ -143,7 +136,7 @@ def main(args):
 
         # chunk
         if TARGET_DATASET != "poza":
-            main_logger.info("-----------START CHUNK-----------")
+            logger.info("-----------START CHUNK-----------")
             chunk_midi(
                 steps_per_sec=STEPS_PER_SEC,
                 longest_allowed_space=LONGEST_ALLOWED_SPACE,
@@ -156,7 +149,7 @@ def main(args):
 
         # parsing
         if TARGET_DATASET != "poza":
-            main_logger.info("----------START PARSING----------")
+            logger.info("----------START PARSING----------")
             for window_size in STANDARD_WINDOW_SIZE:
                 parse_midi(
                     midi_path=chunk_midi_dir,
@@ -170,7 +163,7 @@ def main(args):
         if not os.listdir(parsing_midi_dir):
             print("정보를 추출할 미디 파일이 없습니다.")
             continue
-        main_logger.info("-----------START EXTRACT---------")
+        logger.info("-----------START EXTRACT---------")
 
         if TARGET_DATASET == "poza":
             poza_metas = load_poza_meta(URL)
@@ -192,7 +185,7 @@ def main(args):
             for split_name, value in splits.items():
                 np.save(os.path.join(encode_npy_dir, split_name), value)
 
-            main_logger.info(f"------Finish processing: {subset}-------")
+            logger.info(f"------Finish processing: {subset}-------")
 
 
 if __name__ == "__main__":
