@@ -1,7 +1,6 @@
 # 미디 전처리 스크립트 (midi -> tfrecord)
 
 import argparse
-import logging
 import os
 import warnings
 from pathlib import Path
@@ -9,6 +8,7 @@ from typing import List
 
 import numpy as np
 
+from dioai.logger import logger
 from dioai.preprocessor.chunk_midi import chunk_midi
 from dioai.preprocessor.extract_info import MidiExtractor, extract_midi_info
 from dioai.preprocessor.utils import concat_npy, load_poza_meta, parse_midi, split_train_val_test
@@ -87,8 +87,6 @@ def get_parser() -> argparse.ArgumentParser:
 
 
 def main(args):
-    logger = logging.getLogger("dioai.preprocessor")
-
     # args
     STEPS_PER_SEC = args.steps_per_sec
     LONGEST_ALLOWED_SPACE = args.longest_allowed_space

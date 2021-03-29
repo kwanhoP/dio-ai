@@ -1,8 +1,8 @@
 import argparse
 import concurrent.futures
-import logging
 from pathlib import Path
 
+from dioai.logger import logger
 from dioai.preprocessor import utils
 from dioai.utils.sdk.s3 import S3Client
 
@@ -22,8 +22,6 @@ def get_parser() -> argparse.ArgumentParser:
 # TODO: 2021.03.27
 # 매번 전체 샘플을 다운로드하는 것은 비효율적이므로 이전 다운로드 일자와 샘플이 S3에서 변경된 날짜를 비교하여 변경된 파일만 다운로드하도록 변경
 def main(args: argparse.Namespace) -> None:
-    logger = logging.getLogger("dioai")
-
     output_dir = Path(args.output_dir).expanduser()
     pozalabs_samples = utils.load_poza_meta(args.backoffice_api_url + "/api/samples", per_page=2000)
     logger.info(f"Fetched {len(pozalabs_samples)} samples from backoffice")
