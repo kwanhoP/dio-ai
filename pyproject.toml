@@ -1,5 +1,5 @@
 [tool.poetry]
-name = "dio-ai"
+name = "dioai"
 version = "0.1.0"
 description = ""
 authors = ["pozalabs <contact@pozalabs.com>"]
@@ -29,6 +29,7 @@ boto3 = "^1.17.35"
 [tool.poetry.dev-dependencies]
 pre-commit = "^2.10.0"
 pytest = "^6.2.2"
+tox = "^3.23.0"
 
 [tool.black]
 line-length = 100

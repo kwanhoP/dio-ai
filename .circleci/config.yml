@@ -1,0 +1,37 @@
+version: 2.1
+
+common: &common
+  working_directory: ~/dioai
+  steps:
+    - checkout
+    - restore_cache:
+        keys:
+          - v1-deps-{{ .Environment.CIRCLE_JOB }}-{{ checksum "requirements.txt" }}
+    - run:
+        name: install dependencies
+        command: |
+          pip install --user tox
+    - run:
+        name: run tox
+        command: ~/.local/bin/tox -c ./tox.ini
+    - save_cache:
+        paths:
+          - .tox
+          - ~/.cache/pip
+          - ~/.local
+          - ./eggs
+        key: v1-deps-{{ .Environment.CIRCLE_JOB }}-{{ checksum "requirements.txt" }}
+
+jobs:
+  py37:
+    <<: *common
+    docker:
+      - image: circleci/python:3.7
+        environment:
+          TOXENV=py37
+
+workflows:
+  version: 2
+  test:
+    jobs:
+      - py37
