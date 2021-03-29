@@ -107,7 +107,7 @@ def main(args):
         midi_dataset_path = midi_dataset_paths / subset
 
         # 이미 전처리 완료된 subset 폴더는 건너 뜀
-        encode_npy_pth = midi_dataset_path / args.encode_npy_dir / "input_train.npy"
+        encode_npy_pth = midi_dataset_path / "output_npy" / "input_train.npy"
         if encode_npy_pth.exists():
             logger.info(f"------Already processed: {subset}-------")
             continue

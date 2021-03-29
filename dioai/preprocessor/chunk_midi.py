@@ -46,6 +46,7 @@ def chunk_midi_map(
             ValueError,
             EOFError,
             IndexError,
+            ZeroDivisionError,
         ):
             continue
 
@@ -233,12 +234,13 @@ def chunk_midi(
 ) -> None:
 
     midifiles = []
-    for _, (dirpath, _, filenames) in enumerate(os.walk(midi_dataset_path)):
-        fileExt = [".mid", ".MID", ".MIDI", ".midi"]
-        for Ext in fileExt:
-            tem = [os.path.join(dirpath, _) for _ in filenames if _.endswith(Ext)]
-            if tem:
-                midifiles += tem
+    for (dirpath, _, filenames) in os.walk(midi_dataset_path):
+        if dirpath != chunked_midi_path and dirpath != tmp_midi_dir:
+            fileExt = [".mid", ".MID", ".MIDI", ".midi"]
+            for Ext in fileExt:
+                tem = [os.path.join(dirpath, file) for file in filenames if file.endswith(Ext)]
+                if tem:
+                    midifiles += tem
 
     split_midi = np.array_split(np.array(midifiles), num_cores)
     split_midi = [x.tolist() for x in split_midi]
