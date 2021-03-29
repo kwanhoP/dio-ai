@@ -65,41 +65,6 @@ def get_parser() -> argparse.ArgumentParser:
         help="전처리하고자 하는 midi파일들이 들어있는 폴더. 폴더 속 폴더 존재 가능",
     )
     parser.add_argument(
-        "--chunk_midi_dir",
-        type=str,
-        default="chunked",
-        required=True,
-        help="전처리 후 만들어진 각 chunk 는 하나의 midi파일로 저장되는데, 이러한 midi 파일들이 저장되는 폴더",
-    )
-    parser.add_argument(
-        "--tmp_midi_dir",
-        type=str,
-        default="tmp",
-        required=True,
-        help="미디 파일의 Tempo가 달라지는 경우 노트가 밀리는 현상 해결을 위해 평균 Tempo값으로 고정되어 저장되는 폴더",
-    )
-    parser.add_argument(
-        "--parse_midi_dir",
-        type=str,
-        default="parsed",
-        required=True,
-        help="chunked된 미디 파일을 마디 길이에 맞게 파싱, Augment 이후 저장되는 폴더",
-    )
-    parser.add_argument(
-        "--encode_npy_dir",
-        type=str,
-        default="output_npy",
-        required=True,
-        help="저장된 npy 데이터를 합치고 train_test_split 해서 최종 저장하는 폴더",
-    )
-    parser.add_argument(
-        "--encode_tmp_dir",
-        type=str,
-        default="tmp_npy",
-        required=True,
-        help="인코딩 된 미디 데이터를 npy 형식으로 임시 저장하는 폴더",
-    )
-    parser.add_argument(
         "--model",
         type=str,
         default="GPT",
@@ -155,25 +120,25 @@ def main(args):
             continue
 
         main_logger.info(f"------Start processing: {subset}-------")
-        for args_pth in [
-            args.chunk_midi_dir,
-            args.parse_midi_dir,
-            args.tmp_midi_dir,
-            args.encode_npy_dir,
-            args.encode_tmp_dir,
+        for sub_dir in [
+            "chunked",
+            "parsed",
+            "tmp",
+            "output_npy",
+            "npy_tmp",
         ]:
-            pth = midi_dataset_path / args_pth
+            pth = midi_dataset_path / sub_dir
             if not pth.exists():
                 os.makedirs(pth)
-            if args_pth == "chunked":
+            if sub_dir == "chunked":
                 chunk_midi_dir = pth
-            elif args_pth == "parsed":
+            elif sub_dir == "parsed":
                 parsing_midi_dir = pth
-            elif args_pth == "tmp":
+            elif sub_dir == "tmp":
                 tmp_midi_dir = pth
-            elif args_pth == "output_npy":
+            elif sub_dir == "output_npy":
                 encode_npy_dir = pth
-            elif args_pth == "npy_tmp":
+            elif sub_dir == "npy_tmp":
                 encode_tmp_dir = pth
 
         # chunk
