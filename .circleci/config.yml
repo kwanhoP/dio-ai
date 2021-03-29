@@ -6,7 +6,7 @@ common: &common
     - checkout
     - restore_cache:
         keys:
-          - v1-deps-{{ .Environment.CIRCLE_JOB }}-{{ checksum "requirements.txt" }}
+          - v1-deps-{{ .Environment.CIRCLE_JOB }}-{{ checksum "poetry.lock" }}
     - run:
         name: install dependencies
         command: |
@@ -20,7 +20,7 @@ common: &common
           - ~/.cache/pip
           - ~/.local
           - ./eggs
-        key: v1-deps-{{ .Environment.CIRCLE_JOB }}-{{ checksum "requirements.txt" }}
+        key: v1-deps-{{ .Environment.CIRCLE_JOB }}-{{ checksum "poetry.lock" }}
 
 jobs:
   py37:

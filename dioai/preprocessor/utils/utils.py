@@ -364,9 +364,14 @@ def get_pitch_range_v2(midi_obj: mido.MidiFile, keyswitch_velocity: Optional[int
             if track.name == CHORD_TRACK_NAME:
                 continue
             for event in track.notes:
-                if event.pitch != 0 and (
-                    keyswitch_velocity is not None and event.velocity != keyswitch_velocity
-                ):
+                if event.pitch == 0:
+                    continue
+
+                if keyswitch_velocity is not None:
+                    if event.velocity != keyswitch_velocity:
+                        total += event.pitch
+                        count += 1
+                else:
                     total += event.pitch
                     count += 1
         if not count:

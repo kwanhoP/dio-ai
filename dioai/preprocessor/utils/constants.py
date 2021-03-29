@@ -1,11 +1,23 @@
 import enum
 import multiprocessing
+from typing import Optional
 
 
 class DefaultValue(enum.Enum):
     BPM = 120
     AUDIO_KEY = "cmajor"
     TIME_SIGNATURE = "4/4"
+
+
+class KeySwitchVelocity(int, enum.Enum):
+    DEFAULT = 1
+
+    @classmethod
+    def get_value(cls, key: Optional[str]) -> int:
+        key = key or "DEFAULT"
+        if hasattr(cls, key):
+            return getattr(cls, key).value
+        return cls.DEFAULT.value
 
 
 DEFAULT_NUM_BEATS = 4
