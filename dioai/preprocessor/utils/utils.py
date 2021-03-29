@@ -334,7 +334,7 @@ def get_bpm_v2(meta_message: Optional[mido.MetaMessage]) -> Union[int, str]:
 
 
 @with_default()
-def get_key(meta_message: Optional[mido.MetaMessage]) -> str:
+def get_audio_key_v2(meta_message: Optional[mido.MetaMessage]) -> str:
     def _is_major(_ks):
         return _ks[CHORD_TYPE_IDX] != MINOR_KEY
 
@@ -345,7 +345,7 @@ def get_key(meta_message: Optional[mido.MetaMessage]) -> str:
 
     key_signature = getattr(meta_message, "key")
     _key, _chord_type = _divide_key_chord_type(key_signature, _is_major(key_signature))
-    return _key + _chord_type
+    return _key.lower() + _chord_type
 
 
 @with_default()

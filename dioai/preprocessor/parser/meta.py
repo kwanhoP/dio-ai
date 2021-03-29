@@ -37,7 +37,7 @@ class RedditMetaParser(BaseMetaParser):
 
         midi_meta = MidiMeta(
             bpm=utils.get_bpm_v2(_get_meta_message_func(event_type="set_tempo")),
-            audio_key=utils.get_key(_get_meta_message_func(event_type="key_signature")),
+            audio_key=utils.get_audio_key_v2(_get_meta_message_func(event_type="key_signature")),
             time_signature=utils.get_time_signature_v2(
                 _get_meta_message_func(event_type="time_signature")
             ),
