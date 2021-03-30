@@ -51,3 +51,35 @@ def test_encode():
     ]
     encoded_meta = meta.encode_meta(midi_meta)
     assert encoded_meta == expected
+
+
+class TestPozalabsMetaEncoder:
+    @pytest.fixture(scope="function", autouse=True)
+    def _meta_encoder(self):
+        self.meta_encoder = meta.PozalabsMetaEncoder()
+
+    def test_encode(self):
+        midi_meta = MidiMeta(
+            bpm=200,
+            audio_key="cmajor",
+            time_signature="4/4",
+            pitch_range="mid",
+            num_measures="4",
+            inst="acoustic_piano",
+        )
+        expected = [
+            # 39 + Offset.BPM (1)
+            40,
+            # 0 + Offset.AUDIO_KEY (42)
+            42,
+            # 4 + Offset.TIME_SIGNATURE (67)
+            71,
+            # 3 + Offset.PITCH_RANGE (85)
+            88,
+            # Offset.MEASURES_4
+            92,
+            # 0 + Offset.INST (95)
+            95,
+        ]
+        encoded_meta = self.meta_encoder.encode(midi_meta)
+        assert encoded_meta == expected

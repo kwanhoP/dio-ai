@@ -1,4 +1,5 @@
 import abc
+import copy
 import functools
 import inspect
 from pathlib import Path
@@ -60,8 +61,11 @@ class PozalabsMetaParser(BaseMetaParser):
         super().__init__()
 
     def parse(self, meta_dict: Dict[str, Any]) -> MidiMeta:
-        # TODO: 포자랩스의 `inst`는 실제 악기명이지 프로그램 번호가 아니므로 제대로 파싱하도록 수정해야 함
-        return MidiMeta(**meta_dict)
+        copied_meta_dict = copy.deepcopy(meta_dict)
+        copied_meta_dict["audio_key"] = (
+            copied_meta_dict["audio_key"] + copied_meta_dict["chord_type"]
+        )
+        return MidiMeta(**copied_meta_dict)
 
 
 META_PARSERS: Dict[str, Type[BaseMetaParser]] = {
