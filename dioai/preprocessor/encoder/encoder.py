@@ -37,7 +37,7 @@ def encode_midi(filename: str) -> List[int]:
     return encode_seq
 
 
-def decode_midi(output_path, midi_info: MidiInfo, filename):
+def decode_midi(output_path, midi_info: MidiInfo, filename: Optional[str] = None):
     decoder = MidiPerformanceEncoderWithInstrument()
     output_path = Path(output_path)
     decoder.decode(
@@ -208,7 +208,10 @@ class MidiPerformanceEncoder(MagentaMidiPerformanceEncoder):
 
     @staticmethod
     def note_sequence_to_midi_file(
-        output_path: Union[str, Path], midi_info: MidiInfo, ns: note_seq.NoteSequence, origin_name
+        output_path: Union[str, Path],
+        midi_info: MidiInfo,
+        ns: note_seq.NoteSequence,
+        origin_name: Optional[str] = None,
     ) -> str:
         output_path = output_path.expanduser()
         if ".mid" not in output_path.name:
