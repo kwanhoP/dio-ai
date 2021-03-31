@@ -47,7 +47,7 @@ def find_latest_checkpoint(checkpoint_dir: Union[str, Path]) -> str:
 
 
 def load_config(config_path: Union[str, Path]) -> TransformersConfig:
-    config = TransformersConfig.from_json(config_path)
+    config = TransformersConfig.from_file(config_path)
     config.save()
     return config
 

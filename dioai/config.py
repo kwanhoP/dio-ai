@@ -22,23 +22,34 @@ class TransformersConfig:
     model: PretrainedConfig
     training: TrainingArguments
     output_root_dir: str
+    logging_root_dir: str
 
     @classmethod
-    def from_json(cls, json_path: Union[str, Path]) -> TransformersConfig:
+    def from_file(cls, json_path: Union[str, Path]) -> TransformersConfig:
         with open(json_path, "r") as f:
             data = json.load(f)
 
-        start_time = datetime.datetime.now().strftime("%y%m%d_%H%M%S")
         output_root_dir = Path(data["output_root_dir"]).expanduser()
-        output_root_dir.mkdir(exist_ok=True, parents=True)
+        logging_root_dir = Path(data["logging_root_dir"]).expanduser()
+        resume_training = data["resume_training"]
 
-        dir_name = f"{data['model_name']}-{start_time}"
+        if resume_training:
+            output_dir = output_root_dir
+            logging_dir = logging_root_dir
+        else:
+            start_time = datetime.datetime.now().strftime("%y%m%d_%H%M%S")
+            dir_name = f"{data['model_name']}-{start_time}"
+            output_dir = output_root_dir.joinpath("checkpoints", dir_name)
+            output_dir.mkdir(exist_ok=True, parents=True)
+            logging_dir = logging_root_dir.joinpath("runs", dir_name)
+            logging_dir.mkdir(exist_ok=True, parents=True)
+
         data = expanduser_data(data)
         model_config = GPT2Config(**data.pop("model"))
         training_config = TrainingArguments(
             **data.pop("training"),
-            output_dir=str(output_root_dir.joinpath("checkpoints", dir_name)),
-            logging_dir=str(output_root_dir.joinpath("runs", dir_name)),
+            output_dir=str(output_dir),
+            logging_dir=str(logging_dir),
         )
         return cls(**data, model=model_config, training=training_config)
 

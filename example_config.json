@@ -7,6 +7,7 @@
   "resume_training": false,
   "tf_gpu_memory_limit": 512,
   "output_root_dir": "OUTPUT_ROOT_DIR",
+  "logging_root_dir": "LOGGING_ROOT_DIR",
   "model": {
     "vocab_size": 518,
     "n_ctx": 1024,
