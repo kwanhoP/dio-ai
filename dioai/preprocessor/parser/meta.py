@@ -31,6 +31,7 @@ class RedditMetaParser(BaseMetaParser):
         self.default_to_unknown = default_to_unknown
 
     def parse(self, midi_path: Union[str, Path]) -> MidiMeta:
+        midi_path = str(midi_path)
         midi_obj = mido.MidiFile(midi_path)
         meta_track = midi_obj.tracks[0]
 
