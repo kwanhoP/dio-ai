@@ -940,6 +940,14 @@ display = ["matplotlib (>=1.5.0)", "scipy (>=1.0.0)"]
 testing = ["matplotlib (>=2.1.0,<3)"]
 
 [[package]]
+name = "more-itertools"
+version = "8.7.0"
+description = "More routines for operating on iterables, beyond itertools"
+category = "main"
+optional = false
+python-versions = ">=3.5"
+
+[[package]]
 name = "mpmath"
 version = "1.2.1"
 description = "Python library for arbitrary-precision floating-point arithmetic"
@@ -950,6 +958,20 @@ python-versions = "*"
 [package.extras]
 develop = ["pytest (>=4.6)", "pycodestyle", "pytest-cov", "codecov", "wheel"]
 tests = ["pytest (>=4.6)"]
+
+[[package]]
+name = "music21"
+version = "6.7.1"
+description = "A Toolkit for Computer-Aided Musical Analysis."
+category = "main"
+optional = false
+python-versions = ">=3.6"
+
+[package.dependencies]
+chardet = "*"
+joblib = "*"
+more-itertools = "*"
+webcolors = "*"
 
 [[package]]
 name = "networkx"
@@ -2156,6 +2178,14 @@ optional = false
 python-versions = "*"
 
 [[package]]
+name = "webcolors"
+version = "1.11.1"
+description = "A library for working with color names and color values formats defined by HTML and CSS."
+category = "main"
+optional = false
+python-versions = ">=3.5,"
+
+[[package]]
 name = "werkzeug"
 version = "1.0.1"
 description = "The comprehensive WSGI web application library."
@@ -2215,7 +2245,7 @@ testing = ["coverage (>=5.0.3)", "zope.event", "zope.testing"]
 [metadata]
 lock-version = "1.1"
 python-versions = "^3.7"
-content-hash = "36a6dfc4890ee9843e4342858d7d971f7725781c3ce3294a3eb118682d28f066"
+content-hash = "aeaec52f378b75ad5f58579b897c560b7a7e1630acbc53127e3bf314ba0565c5"
 
 [metadata.files]
 absl-py = [
@@ -2782,9 +2812,16 @@ mido = [
 mir-eval = [
     {file = "mir_eval-0.6.tar.gz", hash = "sha256:f87310e326ad9f80ba65e3f0d1ced2013a2845016fc51d7af56c79195668d216"},
 ]
+more-itertools = [
+    {file = "more-itertools-8.7.0.tar.gz", hash = "sha256:c5d6da9ca3ff65220c3bfd2a8db06d698f05d4d2b9be57e1deb2be5a45019713"},
+    {file = "more_itertools-8.7.0-py3-none-any.whl", hash = "sha256:5652a9ac72209ed7df8d9c15daf4e1aa0e3d2ccd3c87f8265a0673cd9cbc9ced"},
+]
 mpmath = [
     {file = "mpmath-1.2.1-py3-none-any.whl", hash = "sha256:604bc21bd22d2322a177c73bdb573994ef76e62edd595d17e00aff24b0667e5c"},
     {file = "mpmath-1.2.1.tar.gz", hash = "sha256:79ffb45cf9f4b101a807595bcb3e72e0396202e0b1d25d689134b48c4216a81a"},
+]
+music21 = [
+    {file = "music21-6.7.1.tar.gz", hash = "sha256:f199534713a6e5cd70a6e89d5ffbe78d5fd1086753d5092efe32681d2ab7a13a"},
 ]
 networkx = [
     {file = "networkx-2.5-py3-none-any.whl", hash = "sha256:8c5812e9f798d37c50570d15c4a69d5710a18d77bafc903ee9c5fba7454c616c"},
@@ -3580,6 +3617,10 @@ virtualenv = [
 wcwidth = [
     {file = "wcwidth-0.2.5-py2.py3-none-any.whl", hash = "sha256:beb4802a9cebb9144e99086eff703a642a13d6a0052920003a230f3294bbe784"},
     {file = "wcwidth-0.2.5.tar.gz", hash = "sha256:c4d647b99872929fdb7bdcaa4fbe7f01413ed3d98077df798530e5b04f116c83"},
+]
+webcolors = [
+    {file = "webcolors-1.11.1-py3-none-any.whl", hash = "sha256:b8cd5d865a25c51ff1218f0c90d0c0781fc64312a49b746b320cf50de1648f6e"},
+    {file = "webcolors-1.11.1.tar.gz", hash = "sha256:76f360636957d1c976db7466bc71dcb713bb95ac8911944dffc55c01cb516de6"},
 ]
 werkzeug = [
     {file = "Werkzeug-1.0.1-py2.py3-none-any.whl", hash = "sha256:2de2a5db0baeae7b2d2664949077c2ac63fbd16d98da0ff71837f7d1dea3fd43"},

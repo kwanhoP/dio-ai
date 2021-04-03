@@ -20,6 +20,7 @@ class KeySwitchVelocity(int, enum.Enum):
         return cls.DEFAULT.value
 
 
+MIDI_EXTENSIONS = (".mid", ".MID", ".midi", ".MIDI")
 DEFAULT_NUM_BEATS = 4
 CHORD_TRACK_NAME = "chord"
 PITCH_RANGE_CUT = {
@@ -305,6 +306,14 @@ PITCH_RANGE_MAP = {
     "very_high": 6,
 }
 
+# 로직에서 표기되는 채널에서 1을 빼야함 (로직과 달리 `mido`에서는 0부터 시작하므로)
+# 순서대로 sfx, basic_beat, additional_beat, electric_beat
+CHANNEL_NOT_FOR_MELODY = {
+    "sfx": 6,
+    "basic_beat": 9,
+    "additional_beat": 10,
+    "electric_beat": 11,
+}
 INSTRUMENT_NOT_FOR_MELODY = [
     55,
     96,

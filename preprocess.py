@@ -143,6 +143,7 @@ def main(args):
                 chunked_midi_path=chunk_midi_dir,
                 tmp_midi_dir=tmp_midi_dir,
                 num_cores=num_cores,
+                dataset_name=TARGET_DATASET,
             )
 
         # parsing
