@@ -71,6 +71,7 @@ class BasePreprocessor(abc.ABC):
     def __init__(self, *args, **kwargs):
         pass
 
+    @abc.abstractmethod
     def preprocess(self, *args, **kwargs):
         raise NotImplementedError
 
