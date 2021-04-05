@@ -12,7 +12,6 @@ from dioai.logger import logger
 from dioai.preprocessor.chunk_midi import chunk_midi
 from dioai.preprocessor.extract_info import MidiExtractor, extract_midi_info
 from dioai.preprocessor.utils import concat_npy, load_poza_meta, parse_midi, split_train_val_test
-from dioai.preprocessor.utils.constants import META_LEN
 
 # Pozadataset URL
 URL = "https://backoffice.pozalabs.com/api/samples"
@@ -65,12 +64,6 @@ def get_parser() -> argparse.ArgumentParser:
         help="전처리하고자 하는 midi파일들이 들어있는 폴더. 폴더 속 폴더 존재 가능",
     )
     parser.add_argument(
-        "--model",
-        type=str,
-        default="GPT",
-        help="모델 구조에 따른 전처리 형식 지정 GPT: (meta + note_seq) 합쳐서 하나의 시퀀스로 학습",
-    )
-    parser.add_argument(
         "--bar_window_size",
         type=List,
         default=[4, 8],
@@ -94,7 +87,6 @@ def main(args):
     VAL_RATIO = args.val_ratio
     TEST_RATIO = args.test_ratio
     TARGET_DATASET = args.target_dataset
-    MODEL = args.model
     STANDARD_WINDOW_SIZE = args.bar_window_size
     num_cores = args.num_cores
 
@@ -176,7 +168,7 @@ def main(args):
             extract_midi_info(parsing_midi_dir, encode_tmp_dir, num_cores)
 
             # load, concat and save npy
-            input_npy, target_npy = concat_npy(encode_tmp_dir, MODEL, META_LEN)
+            input_npy, target_npy = concat_npy(encode_tmp_dir)
 
             # split and save npy(results)
             splits = split_train_val_test(input_npy, target_npy, VAL_RATIO, TEST_RATIO)

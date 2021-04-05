@@ -22,21 +22,21 @@ DEFAULT_ENCODING_MAPS = {
 
 
 class Unknown(int, enum.Enum):
-    BPM = 0
-    AUDIO_KEY = 41
-    TIME_SIGNATURE = 66
-    PITCH_RANGE = 84
-    INST = 94
+    BPM = 422
+    AUDIO_KEY = 463
+    TIME_SIGNATURE = 489
+    PITCH_RANGE = 507
+    INST = 516
 
 
 class Offset(int, enum.Enum):
-    BPM = 1
-    AUDIO_KEY = 42
-    TIME_SIGNATURE = 67
-    PITCH_RANGE = 85
-    MEASURES_4 = 92
-    MEASURES_8 = 93
-    INST = 95
+    BPM = 423
+    AUDIO_KEY = 464
+    TIME_SIGNATURE = 489
+    PITCH_RANGE = 507
+    MEASURES_4 = 514
+    MEASURES_8 = 515
+    INST = 517
 
 
 ENCODERS: Dict[str, EncodeFunc] = dict()

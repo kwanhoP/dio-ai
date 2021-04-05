@@ -36,18 +36,18 @@ def test_encode():
         inst="0",
     )
     expected = [
-        # 39 + Offset.BPM (1)
-        40,
-        # 0 + Offset.AUDIO_KEY (42)
-        42,
-        # 4 + Offset.TIME_SIGNATURE (67)
-        71,
-        # 3 + Offset.PITCH_RANGE (85)
-        88,
+        # 39 + Offset.BPM (423)
+        462,
+        # 0 + Offset.AUDIO_KEY (464)
+        464,
+        # 4 + Offset.TIME_SIGNATURE (489)
+        493,
+        # 3 + Offset.PITCH_RANGE (507)
+        510,
         # Offset.MEASURES_4
-        92,
-        # 0 + Offset.INST (95)
-        95,
+        514,
+        # 0 + Offset.INST (517)
+        517,
     ]
     encoded_meta = meta.encode_meta(midi_meta)
     assert encoded_meta == expected
@@ -68,18 +68,18 @@ class TestPozalabsMetaEncoder:
             inst="acoustic_piano",
         )
         expected = [
-            # 39 + Offset.BPM (1)
-            40,
-            # 0 + Offset.AUDIO_KEY (42)
-            42,
-            # 4 + Offset.TIME_SIGNATURE (67)
-            71,
-            # 3 + Offset.PITCH_RANGE (85)
-            88,
+            # 39 + Offset.BPM (423)
+            462,
+            # 0 + Offset.AUDIO_KEY (464)
+            464,
+            # 4 + Offset.TIME_SIGNATURE (489)
+            493,
+            # 3 + Offset.PITCH_RANGE (507)
+            510,
             # Offset.MEASURES_4
-            92,
-            # 0 + Offset.INST (95)
-            95,
+            514,
+            # 0 + Offset.INST (517)
+            517,
         ]
         encoded_meta = self.meta_encoder.encode(midi_meta)
         assert encoded_meta == expected

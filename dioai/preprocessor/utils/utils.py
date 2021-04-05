@@ -563,7 +563,7 @@ def _fetch_samples(
     return data["has_next"], data["samples"]["samples"]
 
 
-def concat_npy(encode_tmp_dir, MODEL, META_LEN):
+def concat_npy(encode_tmp_dir):
     npy_list = os.listdir(encode_tmp_dir)
 
     input_npy_list = [
@@ -590,8 +590,6 @@ def concat_npy(encode_tmp_dir, MODEL, META_LEN):
     input_npy = np.array(input_lst)
     target_npy = np.array(target_lst)
 
-    if MODEL == "GPT":
-        target_npy = target_npy + META_LEN
     return input_npy, target_npy
 
 
