@@ -16,8 +16,6 @@ from dioai.preprocessor.utils import constants
 
 # Tempo, Key, Time Signature가 너무 자주 바뀌는 경우는 학습에 이용하지 않음
 MAXIMUM_CHANGE = 8
-DRUM_CHANNEL = 9
-CHORD_CHANNEL = 5
 UNIT_BPM = 60
 
 
@@ -56,7 +54,7 @@ def filter_melody_tracks_reddit(midi_path: Union[str, Path]) -> str:
 
         channel = utils.get_channel(track)
         program = _get_program(track)
-        if channel == DRUM_CHANNEL or program in programs_not_melody:
+        if channel == constants.DRUM_CHANNEL or program in programs_not_melody:
             continue
 
         new_tracks.append(track)
@@ -253,7 +251,7 @@ def get_chord_track(
     midi_obj: mido.MidiFile, pt_midi: pretty_midi.PrettyMIDI
 ) -> pretty_midi.Instrument:
     for idx, track in enumerate(midi_obj.tracks[1:]):
-        if utils.get_channel(track) == CHORD_CHANNEL:
+        if utils.get_channel(track) == constants.CHORD_CHANNEL:
             chord_track_name = track.name
             instrument = pt_midi.instruments[idx]
             if chord_track_name != instrument.name:
@@ -394,7 +392,7 @@ def chunk_midi_map(
                 )
 
             if (
-                utils.get_channel(mido_tracks_wo_meta[inst_idx]) == CHORD_CHANNEL
+                utils.get_channel(mido_tracks_wo_meta[inst_idx]) == constants.CHORD_CHANNEL
                 or instrument.name == constants.CHORD_TRACK_NAME
             ):
                 continue
@@ -419,7 +417,7 @@ def chunk_midi_map(
                 if preserve_chord_track:
                     try:
                         chord_track = get_chord_track(midi_obj_with_valid_tracks, midi_data)
-                        track_to_channel[chord_track.name] = CHORD_CHANNEL
+                        track_to_channel[chord_track.name] = constants.CHORD_CHANNEL
                         chunked_chord_track = chunk_chord_track(
                             chord_track,
                             chunk_start=chunk_start,

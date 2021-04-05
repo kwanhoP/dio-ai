@@ -39,6 +39,7 @@ class RedditMetaParser(BaseMetaParser):
 
         _get_meta_message_func = functools.partial(utils.get_meta_message_v2, meta_track=meta_track)
 
+        min_velocity, max_velocity = utils.get_velocity_range(midi_path)
         midi_meta = MidiMeta(
             bpm=utils.get_bpm_v2(_get_meta_message_func(event_type="set_tempo")),
             audio_key=utils.get_audio_key_v2(_get_meta_message_func(event_type="key_signature")),
@@ -51,6 +52,8 @@ class RedditMetaParser(BaseMetaParser):
             num_measures=utils.get_num_measures_from_midi(midi_obj.filename),
             inst=utils.get_inst_from_midi_v2(midi_obj.filename),
             genre=utils.get_genre(midi_path.lower()),
+            min_velocity=min_velocity,
+            max_velocity=max_velocity,
         )
         # reddit 데이터셋을 처리할 때 BPM/Key/Time signature 가 모두 기본값이면 UNKNOWN 처리
         if self.default_to_unknown and _is_all_default_meta(midi_meta):
@@ -64,12 +67,16 @@ class PozalabsMetaParser(BaseMetaParser):
     def __init__(self):
         super().__init__()
 
-    def parse(self, meta_dict: Dict[str, Any]) -> MidiMeta:
+    def parse(self, meta_dict: Dict[str, Any], midi_path: Union[str, Path]) -> MidiMeta:
         copied_meta_dict = copy.deepcopy(meta_dict)
         copied_meta_dict["audio_key"] = (
             copied_meta_dict["audio_key"] + copied_meta_dict["chord_type"]
         )
-        return MidiMeta(**copied_meta_dict)
+        min_velocity, max_velocity = utils.get_velocity_range(
+            midi_path,
+            keyswitch_velocity=constants.KeySwitchVelocity.get_value(copied_meta_dict["inst"]),
+        )
+        return MidiMeta(**copied_meta_dict, min_velocity=min_velocity, max_velocity=max_velocity)
 
 
 class Pozalabs2MetaParser(BaseMetaParser):
@@ -86,6 +93,7 @@ class Pozalabs2MetaParser(BaseMetaParser):
 
         _get_meta_message_func = functools.partial(utils.get_meta_message_v2, meta_track=meta_track)
 
+        min_velocity, max_velocity = utils.get_velocity_range(midi_path)
         midi_meta = MidiMeta(
             bpm=utils.get_bpm_v2(_get_meta_message_func(event_type="set_tempo")),
             audio_key=utils.get_audio_key_v2(_get_meta_message_func(event_type="key_signature")),
@@ -98,6 +106,8 @@ class Pozalabs2MetaParser(BaseMetaParser):
             num_measures=utils.get_num_measures_from_midi(midi_obj.filename),
             inst=utils.get_inst_from_midi_v2(midi_obj.filename),
             genre=utils.get_genre(midi_path, self.genre_info),
+            min_velocity=min_velocity,
+            max_velocity=max_velocity,
         )
         return midi_meta
 

@@ -14,6 +14,8 @@ class MidiInfo:
     num_measure: int
     inst: int
     genre: str
+    min_velocity: int
+    max_velocity: int
 
     # note
     note_seq: List[int]
@@ -27,3 +29,5 @@ class MidiMeta(BaseModel):
     num_measures: Union[int, str]
     inst: str
     genre: str
+    min_velocity: Union[int, str]
+    max_velocity: Union[int, str]

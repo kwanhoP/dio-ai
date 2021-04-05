@@ -20,6 +20,8 @@ class KeySwitchVelocity(int, enum.Enum):
         return cls.DEFAULT.value
 
 
+DRUM_CHANNEL = 9
+CHORD_CHANNEL = 5
 MIDI_EXTENSIONS = (".mid", ".MID", ".midi", ".MIDI")
 DEFAULT_NUM_BEATS = 4
 CHORD_TRACK_NAME = "chord"
@@ -43,6 +45,7 @@ STEPS_PER_SECOND = 100
 MIN_PITCH = 0
 MAX_PITCH = 127
 BPM_INTERVAL = 5
+VELOCITY_INTERVAL = 5
 MAX_BPM = 200
 
 DEFAULT_BPM = 24

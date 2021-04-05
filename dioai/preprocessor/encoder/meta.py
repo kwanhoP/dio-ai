@@ -2,6 +2,7 @@ import abc
 import enum
 import functools
 import inspect
+import math
 from typing import Any, Callable, Dict, List, Type, Union
 
 from dioai.exceptions import ErrorMessage, UnprocessableMidiError
@@ -20,18 +21,29 @@ DEFAULT_ENCODING_MAPS = {
     "inst": constants.PROGRAM_INST_MAP,
     "genre": constants.GENRE_MAP,
 }
+ATTR_ALIAS = {"min_velocity": "velocity", "max_velocity": "velocity"}
 
 
-class Unknown(int, enum.Enum):
+class AliasMixin:
+    @classmethod
+    def get(cls, key: str):
+        key = key.lower()
+        if key in ATTR_ALIAS:
+            return getattr(cls, ATTR_ALIAS[key].upper())
+        return getattr(cls, key.upper())
+
+
+class Unknown(AliasMixin, int, enum.Enum):
     BPM = 422
     AUDIO_KEY = 463
     TIME_SIGNATURE = 489
     PITCH_RANGE = 507
     INST = 516
     GENRE = 525
+    VELOCITY = 539
 
 
-class Offset(int, enum.Enum):
+class Offset(AliasMixin, int, enum.Enum):
     BPM = 423
     AUDIO_KEY = 464
     TIME_SIGNATURE = 489
@@ -40,6 +52,7 @@ class Offset(int, enum.Enum):
     MEASURES_8 = 515
     INST = 517
     GENRE = 526
+    VELOCITY = 540
 
 
 ENCODERS: Dict[str, EncodeFunc] = dict()
@@ -71,7 +84,7 @@ def encode_unknown(
             if args[0] == constants.UNKNOWN:
                 if raise_error:
                     raise UnprocessableMidiError(error_message)
-                return getattr(Unknown, meta_name.upper()).value
+                return Unknown.get(meta_name).value
             return inject_args_to_encode_func(func, *args, **kwargs)
 
         return wrapper
@@ -83,8 +96,8 @@ def add_offset(func):
     @functools.wraps(func)
     def wrapper(*args, **kwargs):
         meta_name = _get_meta_name(func.__name__).upper()
-        offset_value = getattr(Offset, meta_name).value
-        unknown_value = getattr(Unknown, meta_name).value
+        offset_value = Offset.get(meta_name).value
+        unknown_value = Unknown.get(meta_name).value
         result = inject_args_to_encode_func(func, *args, **kwargs)
         if result == unknown_value:
             return result
@@ -142,6 +155,21 @@ def encode_inst(inst: Union[int, str], encoding_map: Dict[str, int]) -> int:
 @encode_unknown()
 def encode_genre(genre: str, encoding_map: Dict[str, int]) -> int:
     return encoding_map[genre]
+
+
+@register_encoder
+@add_offset
+@encode_unknown()
+def encode_min_velocity(velocity: Union[int, str]):
+    # 몫을 사용하지 않는 이유 관련 주석: https://github.com/POZAlabs/dio-ai/pull/73/files#r606947174
+    return math.floor(velocity / constants.VELOCITY_INTERVAL)
+
+
+@register_encoder
+@add_offset
+@encode_unknown()
+def encode_max_velocity(velocity: Union[int, str]):
+    return math.ceil(velocity / constants.VELOCITY_INTERVAL)
 
 
 def encode_meta(

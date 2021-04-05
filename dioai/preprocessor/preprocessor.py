@@ -13,7 +13,6 @@ from . import utils
 from .chunk_midi import chunk_midi
 from .encoder import BaseMetaEncoder, MidiPerformanceEncoder
 from .parser import BaseMetaParser
-from .utils import constants
 from .utils.container import MidiMeta
 
 MIDI_EXTENSIONS = (".mid", ".MID", ".midi", ".MIDI")
@@ -100,9 +99,11 @@ class RedditPreprocessor(BasePreprocessor):
         parse_midi_arguments: ParseMidiArguments,
         val_split_ratio: float = 0.1,
         test_split_ratio: float = 0.1,
-        model_name: str = "GPT",
     ) -> None:
         for sub_dir in Path(source_dir).iterdir():
+            if not sub_dir.is_dir():
+                continue
+
             output_sub_dir = get_output_sub_dir(sub_dir)
             chunk_midi(
                 midi_dataset_path=sub_dir,
@@ -126,7 +127,7 @@ class RedditPreprocessor(BasePreprocessor):
                 num_cores=num_cores,
             )
             splits = utils.split_train_val_test(
-                *utils.concat_npy(output_sub_dir.encode_tmp, model_name, constants.META_LEN),
+                *utils.concat_npy(output_sub_dir.encode_tmp),
                 val_ratio=val_split_ratio,
                 test_ratio=test_split_ratio,
             )
@@ -137,7 +138,7 @@ class RedditPreprocessor(BasePreprocessor):
         self, parsed_midi_dir: Union[str, Path], encode_tmp_dir: Union[str, Path], num_cores: int
     ) -> None:
         midi_filenames = [
-            filename
+            str(filename)
             for filename in parsed_midi_dir.rglob("**/*")
             if filename.suffix in MIDI_EXTENSIONS
         ]

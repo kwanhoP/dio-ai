@@ -21,7 +21,11 @@ class PreprocessPipeline:
         *args,
         **kwargs,
     ):
-        meta_parser = MetaParserFactory().create(self.dataset_name)
+        meta_parser = MetaParserFactory().create(
+            self.dataset_name,
+            # meta_csv_path: pozalabs2 데이터셋을 위한 인자
+            meta_csv_path=Path(source_dir).joinpath("meta.csv"),
+        )
         meta_encoder = MetaEncoderFactory().create(self.dataset_name)
         preprocessor = PreprocessorFactory().create(
             self.dataset_name,

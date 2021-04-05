@@ -1,6 +1,6 @@
 import os
 import tempfile
-from typing import Dict, Optional
+from typing import Dict, Optional, Tuple, Union
 
 import mido
 import pretty_midi
@@ -160,6 +160,25 @@ def test_get_inst_from_midi_v2(midi_path: str, expected: str, request: pytest.Fi
 )
 def test_get_genre(midi_path: str, path_to_genre: Optional[Dict[str, str]], expected: str):
     assert utils.get_genre(midi_path=midi_path, path_to_genre=path_to_genre) == expected
+
+
+@pytest.mark.parametrize(
+    "midi_path, keyswitch_velocity, expected",
+    [
+        ("midi_path_fixture", 1, (60, 60)),
+        ("midi_path_fixture", None, (1, 60)),
+        ("midi_path_fixture_no_instrument", None, (constants.UNKNOWN, constants.UNKNOWN)),
+    ],
+)
+def test_get_velocity_range(
+    midi_path: str,
+    keyswitch_velocity: Optional[int],
+    expected: Tuple[Union[int, str], Union[int, str]],
+    request: pytest.FixtureRequest,
+):
+    midi_path = request.getfixturevalue(midi_path)
+    result = utils.get_velocity_range(midi_path=midi_path, keyswitch_velocity=keyswitch_velocity)
+    assert result == expected
 
 
 @pytest.mark.parametrize(

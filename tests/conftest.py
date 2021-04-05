@@ -14,4 +14,6 @@ def unknown_meta() -> MidiMeta:
         num_measures=constants.UNKNOWN,
         inst=constants.UNKNOWN,
         genre=constants.UNKNOWN,
+        min_velocity=constants.UNKNOWN,
+        max_velocity=constants.UNKNOWN,
     )

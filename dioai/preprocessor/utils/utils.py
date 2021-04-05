@@ -452,12 +452,11 @@ def get_inst_from_midi_v2(midi_path: Union[str, Path]) -> str:
 
 
 def get_genre(midi_path: Union[str, Path], path_to_genre: Optional[Dict[str, str]] = None) -> str:
-    midi_path = str(midi_path)
-
     if path_to_genre is not None:
         # TODO: 매우 비효율적인 연산. 리팩터링할 것
         pattern = re.compile("|".join(path_to_genre.keys()))
-        matched = pattern.match(midi_path)
+        # 포자랩스2 데이터만 `stem`을 사용, 그렇지 않은 경우에는 전체 경로 사용
+        matched = pattern.match(Path(midi_path).stem)
         if matched is None:
             raise UnprocessableMidiError("Could not find filename from meta csv")
         return path_to_genre.get(matched.group(), UNKNOWN)
@@ -466,6 +465,36 @@ def get_genre(midi_path: Union[str, Path], path_to_genre: Optional[Dict[str, str
         if genre in str(midi_path):
             return genre
     return constants.DEFAULT_GENRE
+
+
+def get_velocity_range(
+    midi_path: Union[str, Path], keyswitch_velocity: Optional[int] = None
+) -> Tuple[Union[int, str], Union[int, str]]:
+    pt_midi = pretty_midi.PrettyMIDI(str(midi_path))
+    raw_track_to_channel = {
+        track.name: get_channel(track) for track in mido.MidiFile(midi_path).tracks
+    }
+    track_to_channel = {
+        track_name: channel
+        for track_name, channel in raw_track_to_channel.items()
+        if channel is not None
+    }
+
+    velocities = []
+    for track in pt_midi.instruments:
+        channel = track_to_channel[track.name]
+        if channel == constants.CHORD_CHANNEL:
+            continue
+        for note in track.notes:
+            if keyswitch_velocity is not None:
+                if note.velocity != keyswitch_velocity:
+                    velocities.append(note.velocity)
+            else:
+                velocities.append(note.velocity)
+
+    if not velocities or max(velocities) == 0:
+        return UNKNOWN, UNKNOWN
+    return min(velocities), max(velocities)
 
 
 def get_meta_message_v2(meta_track: mido.MidiTrack, event_type: str) -> Optional[mido.MetaMessage]:
