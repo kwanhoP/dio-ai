@@ -1,6 +1,6 @@
 import os
 import tempfile
-from typing import Optional, Union
+from typing import Optional
 
 import mido
 import pretty_midi
@@ -11,11 +11,53 @@ from dioai.preprocessor.utils import constants
 
 
 @pytest.fixture(scope="function")
-def midi_obj_fixture():
+def midi_path_fixture():
+    fd, path = tempfile.mkstemp(suffix=".mid")
+    os.close(fd)
     midi_obj = mido.MidiFile()
     track = mido.MidiTrack()
     track.extend(
         [
+            mido.MetaMessage("set_tempo", tempo=1000000, time=0),
+            mido.MetaMessage("time_signature", numerator=4, denominator=4, time=0),
+            mido.MetaMessage("key_signature", key="C", time=0),
+        ]
+    )
+    track = mido.MidiTrack()
+    track.extend(
+        [
+            mido.MetaMessage("track_name", name="main_melody", time=0),
+            mido.Message("note_on", channel=0, note=58, velocity=1, time=0),
+            mido.Message("note_on", channel=0, note=74, velocity=60, time=0),
+            mido.Message("note_off", channel=0, note=58, velocity=1, time=440),
+            mido.Message("note_off", channel=0, note=74, velocity=60, time=440),
+        ]
+    )
+    track.name = "main_melody"
+    print(list(track))
+    midi_obj.tracks.append(track)
+    midi_obj.save(path)
+    yield path
+    os.remove(path)
+
+
+@pytest.fixture(scope="function")
+def midi_obj_fixture():
+    fd, path = tempfile.mkstemp(suffix=".mid")
+    os.close(fd)
+    midi_obj = mido.MidiFile()
+    track = mido.MidiTrack()
+    track.extend(
+        [
+            mido.MetaMessage("set_tempo", tempo=1000000, time=0),
+            mido.MetaMessage("time_signature", numerator=4, denominator=4, time=0),
+            mido.MetaMessage("key_signature", key="C", time=0),
+        ]
+    )
+    track = mido.MidiTrack()
+    track.extend(
+        [
+            mido.MetaMessage("track_name", name="main_melody", time=0),
             mido.Message("note_on", channel=0, note=58, velocity=1, time=0),
             mido.Message("note_on", channel=0, note=74, velocity=60, time=0),
             mido.Message("note_off", channel=0, note=58, velocity=1, time=440),
@@ -32,24 +74,6 @@ def midi_obj_fixture_no_message():
     track = mido.MidiTrack()
     midi_obj.tracks.append(track)
     return midi_obj
-
-
-@pytest.fixture(scope="function")
-def midi_path_fixture():
-    fd, filepath = tempfile.mkstemp(suffix=".mid")
-    os.close(fd)
-    midi_obj = pretty_midi.PrettyMIDI()
-    track = pretty_midi.Instrument(program=0)
-    track.notes.extend(
-        [
-            pretty_midi.Note(velocity=60, pitch=60, start=0.0, end=2.0),
-            pretty_midi.Note(velocity=60, pitch=72, start=0.0, end=4.0),
-        ]
-    )
-    midi_obj.instruments.append(track)
-    midi_obj.write(filepath)
-    yield filepath
-    os.remove(filepath)
 
 
 @pytest.fixture(scope="function")
@@ -117,13 +141,11 @@ def test_get_pitch_range_v2(
 @pytest.mark.parametrize(
     "midi_path, expected",
     [
-        ("midi_path_fixture", 0),
+        ("midi_path_fixture", "0"),
         ("midi_path_fixture_no_instrument", constants.UNKNOWN),
     ],
 )
-def test_get_inst_from_midi_v2(
-    midi_path: str, expected: Union[int, str], request: pytest.FixtureRequest
-):
+def test_get_inst_from_midi_v2(midi_path: str, expected: str, request: pytest.FixtureRequest):
     midi_path = request.getfixturevalue(midi_path)
     assert utils.get_inst_from_midi_v2(midi_path) == expected
 
@@ -150,3 +172,13 @@ def test_get_meta_message_v2(
 ):
     result = utils.get_meta_message_v2(meta_track=meta_track, event_type=event_type)
     assert result == expected
+
+
+def test_apply_channel(midi_path_fixture):
+    channel = 4
+    utils.apply_channel(midi_path_fixture, track_to_channel={"main_melody": channel})
+    midi_obj = mido.MidiFile(midi_path_fixture)
+    for track in midi_obj.tracks:
+        for event in track:
+            if hasattr(event, "channel"):
+                assert event.channel == channel

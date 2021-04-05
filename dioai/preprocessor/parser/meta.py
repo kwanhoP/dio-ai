@@ -69,6 +69,14 @@ class PozalabsMetaParser(BaseMetaParser):
         return MidiMeta(**copied_meta_dict)
 
 
+class Pozalabs2MetaParser(RedditMetaParser):
+    name = "pozalabs2"
+
+    def __init__(self, default_to_unknown: bool = False):
+        super().__init__()
+        self.default_to_unknown = default_to_unknown
+
+
 META_PARSERS: Dict[str, Type[BaseMetaParser]] = {
     obj.name: obj
     for _, obj in globals().items()

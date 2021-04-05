@@ -151,10 +151,10 @@ def main(args):
             logger.info("----------START PARSING----------")
             for window_size in STANDARD_WINDOW_SIZE:
                 parse_midi(
-                    midi_path=chunk_midi_dir,
+                    source_dir=chunk_midi_dir,
                     num_measures=window_size,
                     shift_size=1,
-                    parsing_midi_pth=parsing_midi_dir,
+                    output_dir=parsing_midi_dir,
                     num_cores=num_cores,
                 )
 

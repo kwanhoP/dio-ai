@@ -1,5 +1,4 @@
 import copy
-import math
 from dataclasses import dataclass
 from decimal import Decimal
 from pathlib import Path
@@ -12,6 +11,7 @@ import parmap
 import pretty_midi
 
 from dioai.exceptions import UnprocessableMidiError
+from dioai.preprocessor import utils
 from dioai.preprocessor.utils import constants
 
 # Tempo, Key, Time Signature가 너무 자주 바뀌는 경우는 학습에 이용하지 않음
@@ -40,13 +40,6 @@ TRACK_IGNORE_STRATEGIES = {
 }
 
 
-def get_channel(track: mido.MidiTrack) -> int:
-    for event in track:
-        # `channel_prefix` 이벤트의 채널이 15로 설정되어 있는 경우가 있어 해당 이벤트는 제외
-        if hasattr(event, "channel") and event.type != "channel_prefix":
-            return event.channel
-
-
 def filter_melody_tracks_reddit(midi_path: Union[str, Path]) -> str:
     def _get_program(_track: mido.MidiTrack):
         for _event in _track:
@@ -61,7 +54,7 @@ def filter_melody_tracks_reddit(midi_path: Union[str, Path]) -> str:
         if not track:
             continue
 
-        channel = get_channel(track)
+        channel = utils.get_channel(track)
         program = _get_program(track)
         if channel == DRUM_CHANNEL or program in programs_not_melody:
             continue
@@ -81,7 +74,7 @@ def filter_melody_tracks_pozalabs2(midi_path: Union[str, Path]) -> str:
     new_tracks = [midi_tracks[0]]
     for track in midi_tracks[1:]:
         track_name = track.name.strip()
-        channel = get_channel(track)
+        channel = utils.get_channel(track)
         if track_name in channels_not_melody.keys() or channel in channels_not_melody.values():
             continue
         new_tracks.append(track)
@@ -97,23 +90,6 @@ TRACK_FILTER_FUNCS: Dict[str, TrackFilterFuncType] = {
     "reddit": filter_melody_tracks_reddit,
     "pozalabs2": filter_melody_tracks_pozalabs2,
 }
-
-
-def apply_channel(midi_path: Union[str, Path], track_to_channel: Dict[str, int]) -> None:
-    midi_obj = mido.MidiFile(midi_path)
-    new_midi_obj = copy.deepcopy(midi_obj)
-    new_tracks = []
-    for track in midi_obj.tracks:
-        new_track = mido.MidiTrack()
-        for event in track:
-            target_channel = track_to_channel.get(track.name)
-            if hasattr(event, "channel") and target_channel is not None:
-                event = event.copy(channel=target_channel)
-
-            new_track.append(event)
-        new_tracks.append(new_track)
-    new_midi_obj.tracks = new_tracks
-    new_midi_obj.save(midi_path)
 
 
 def get_avg_bpm(event_times: np.ndarray, tempo_infos: np.ndarray, end_time: float) -> int:
@@ -277,7 +253,7 @@ def get_chord_track(
     midi_obj: mido.MidiFile, pt_midi: pretty_midi.PrettyMIDI
 ) -> pretty_midi.Instrument:
     for idx, track in enumerate(midi_obj.tracks[1:]):
-        if get_channel(track) == CHORD_CHANNEL:
+        if utils.get_channel(track) == CHORD_CHANNEL:
             chord_track_name = track.name
             instrument = pt_midi.instruments[idx]
             if chord_track_name != instrument.name:
@@ -296,6 +272,7 @@ def chunk_chord_track(
     chunk_end: float,
     bpm: int,
     time_signature_changes: List[pretty_midi.TimeSignature],
+    time_to_tick_func: Callable[[float], int],
 ) -> pretty_midi.Instrument:
     def _get_unique_ts_changes(_time_signature_changes):
         _unique_time_signatures = []
@@ -330,9 +307,7 @@ def chunk_chord_track(
             if Decimal(_chunk_start) >= Decimal(_time):
                 _seconds_until = list(zip(*_seconds_per_measure_changes[:_i]))
                 _measure_end = sum(_seconds_until[0]) if _seconds_until else 0
-                while Decimal(_chunk_start) > Decimal(_measure_end) and not math.isclose(
-                    _chunk_start, _measure_end
-                ):
+                while time_to_tick_func(_chunk_start) > time_to_tick_func(_measure_end):
                     _measure_end += _seconds_per_measures
                 return max(0.0, _measure_end - _seconds_per_measures)
 
@@ -342,21 +317,14 @@ def chunk_chord_track(
             if Decimal(_chunk_end) >= Decimal(_time):
                 _seconds_until = list(zip(*_seconds_per_measure_changes[:_i]))
                 _measure_end = sum(_seconds_until[0]) if _seconds_until else 0
-                while Decimal(_chunk_end) > Decimal(_measure_end) and not math.isclose(
-                    _chunk_end, _measure_end
-                ):
+                while time_to_tick_func(_chunk_end) > time_to_tick_func(_measure_end):
                     _measure_end += _seconds_per_measures
                 return _measure_end
 
     def _check_note_in_chunk(_note, _chunk_start_measure_start, _chunk_end_measure_end):
-        # 부동수소점 연산 오류를 막기 위해 `math.isclose` 사용
-        return (
-            math.isclose(_note.start, _chunk_start_measure_start)
-            or Decimal(_note.start) >= Decimal(_chunk_start_measure_start)
-        ) and (
-            Decimal(_note.end) <= Decimal(_chunk_end_measure_end)
-            or math.isclose(_note.end, _chunk_end_measure_end)
-        )
+        return time_to_tick_func(_note.start) >= time_to_tick_func(
+            _chunk_start_measure_start
+        ) and time_to_tick_func(_note.end) <= time_to_tick_func(_chunk_end_measure_end)
 
     def _get_first_matched_chord_note(_new_chord_track, _chunk_start, _chunk_end):
         for _note in _new_chord_track.notes:
@@ -370,9 +338,11 @@ def chunk_chord_track(
     first_chord_note = _get_first_matched_chord_note(new_chord_track, chunk_start, chunk_end)
     if first_chord_note is None:
         raise UnprocessableMidiError("Chord notes do not exist for this chunk. Maybe invalid midi")
-    is_incomplete_measure = Decimal(measure_start) < Decimal(
+
+    is_incomplete_measure = time_to_tick_func(measure_start) < time_to_tick_func(
         first_chord_note.start
-    ) and not math.isclose(measure_start, first_chord_note.start)
+    )
+
     chord_track_start = _get_measure_end(chunk_start) if is_incomplete_measure else measure_start
     chord_track_end = _get_measure_end(chunk_end)
     for note in new_chord_track.notes:
@@ -424,7 +394,7 @@ def chunk_midi_map(
                 )
 
             if (
-                get_channel(mido_tracks_wo_meta[inst_idx]) == CHORD_CHANNEL
+                utils.get_channel(mido_tracks_wo_meta[inst_idx]) == CHORD_CHANNEL
                 or instrument.name == constants.CHORD_TRACK_NAME
             ):
                 continue
@@ -441,7 +411,7 @@ def chunk_midi_map(
             chunked_chord_track = None
             for i, (notes, chunk_start) in enumerate(new_notes_per_instrument):
                 mido_track = mido_tracks_wo_meta[inst_idx]
-                track_to_channel = {mido_track.name: get_channel(mido_track)}
+                track_to_channel = {mido_track.name: utils.get_channel(mido_track)}
 
                 if not notes:
                     continue
@@ -456,6 +426,7 @@ def chunk_midi_map(
                             chunk_end=notes[-1].end + chunk_start,
                             bpm=average_tempo,
                             time_signature_changes=midi_data.time_signature_changes,
+                            time_to_tick_func=midi_data.time_to_tick,
                         )
                     except UnprocessableMidiError:
                         continue
@@ -490,7 +461,7 @@ def chunk_midi_map(
                     f"{filename_wo_ext}_{inst_idx}_{instrument.program}_{i}.mid"
                 )
                 new_midi_object.write(str(chunked_midi_filename))
-                apply_channel(chunked_midi_filename, track_to_channel)
+                utils.apply_channel(chunked_midi_filename, track_to_channel)
 
 
 def chunk_midi(
@@ -514,11 +485,11 @@ def chunk_midi(
         and filename.suffix in constants.MIDI_EXTENSIONS
     ]
 
-    split_midi = np.array_split(np.array(sorted(midi_paths)[:10]), num_cores)
+    split_midi = np.array_split(np.array(sorted(midi_paths)), num_cores)
     split_midi = [x.tolist() for x in split_midi]
     parmap.map(
         chunk_midi_map,
-        midi_paths=split_midi,
+        split_midi,
         steps_per_sec=steps_per_sec,
         longest_allowed_space=longest_allowed_space,
         minimum_chunk_length=minimum_chunk_length,

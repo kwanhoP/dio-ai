@@ -1,11 +1,14 @@
+import abc
 import enum
+import inspect
 from dataclasses import asdict, dataclass
 from pathlib import Path
-from typing import Iterable, List, Union
+from typing import Dict, Iterable, List, Type, Union
 
 import numpy as np
 import parmap
 
+from ..exceptions import UnprocessableMidiError
 from . import utils
 from .chunk_midi import chunk_midi
 from .encoder import BaseMetaEncoder, MidiPerformanceEncoder
@@ -53,6 +56,7 @@ class ChunkMidiArguments:
     steps_per_sec: int
     longest_allowed_space: int
     minimum_chunk_length: int
+    preserve_chord_track: bool = False
 
 
 @dataclass
@@ -61,7 +65,17 @@ class ParseMidiArguments:
     shift_size: int = 1
 
 
-class RedditPreprocessor:
+class BasePreprocessor(abc.ABC):
+    name = ""
+
+    def __init__(self, *args, **kwargs):
+        pass
+
+    def preprocess(self, *args, **kwargs):
+        raise NotImplementedError
+
+
+class RedditPreprocessor(BasePreprocessor):
     name = "reddit"
 
     def __init__(
@@ -69,7 +83,10 @@ class RedditPreprocessor:
         meta_parser: BaseMetaParser,
         meta_encoder: BaseMetaEncoder,
         note_sequence_encoder: MidiPerformanceEncoder,
+        *args,
+        **kwargs,
     ):
+        super().__init__(*args, **kwargs)
         self.meta_parser = meta_parser
         self.meta_encoder = meta_encoder
         self.note_sequence_encoder = note_sequence_encoder
@@ -91,14 +108,15 @@ class RedditPreprocessor:
                 chunked_midi_path=output_sub_dir.chunked,
                 tmp_midi_dir=output_sub_dir.tmp,
                 num_cores=num_cores,
+                dataset_name=self.name,
                 **asdict(chunk_midi_arguments),
             )
             for window_size in parse_midi_arguments.bar_window_size:
                 utils.parse_midi(
-                    midi_path=str(output_sub_dir.chunked),
+                    source_dir=str(output_sub_dir.chunked),
                     num_measures=window_size,
                     shift_size=parse_midi_arguments.shift_size,
-                    parsing_midi_pth=output_sub_dir.parsed,
+                    output_dir=output_sub_dir.parsed,
                     num_cores=num_cores,
                 )
             self.export_encoded_midi(
@@ -137,9 +155,12 @@ class RedditPreprocessor:
     ) -> None:
         encode_tmp_dir = Path(encode_tmp_dir)
         for idx, midi_path in enumerate(midi_paths_chunk):
-            encoding_output = self._preprocess_midi(midi_path)
-            np.save(encode_tmp_dir.joinpath(f"input_{idx}"), encoding_output.meta)
-            np.save(encode_tmp_dir.joinpath(f"target_{idx}"), encoding_output.note_sequence)
+            try:
+                encoding_output = self._preprocess_midi(midi_path)
+                np.save(encode_tmp_dir.joinpath(f"input_{idx}"), encoding_output.meta)
+                np.save(encode_tmp_dir.joinpath(f"target_{idx}"), encoding_output.note_sequence)
+            except UnprocessableMidiError:
+                continue
 
     def _preprocess_midi(self, midi_path: Union[str, Path]):
         encoded_meta = np.array(self._encode_meta(self._parse_meta(midi_path)), dtype=object)
@@ -154,3 +175,24 @@ class RedditPreprocessor:
 
     def _parse_meta(self, midi_path: Union[str, Path]) -> MidiMeta:
         return self.meta_parser.parse(midi_path)
+
+
+class Pozalabs2Preprocessor(RedditPreprocessor):
+    name = "pozalabs2"
+
+
+PREPROCESSORS: Dict[str, Type[BasePreprocessor]] = {
+    obj.name: obj
+    for _, obj in globals().items()
+    if inspect.isclass(obj) and issubclass(obj, BasePreprocessor) and not inspect.isabstract(obj)
+}
+
+
+class PreprocessorFactory:
+    registered_preprocessors = tuple(PREPROCESSORS.keys())
+
+    def create(self, name: str, *args, **kwargs) -> BasePreprocessor:
+        if name not in self.registered_preprocessors:
+            raise ValueError(f"`name` should be one of {self.registered_preprocessors}")
+
+        return PREPROCESSORS[name](*args, **kwargs)

@@ -7,7 +7,7 @@ import math
 import os
 import tempfile
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Tuple, Union
+from typing import Any, Callable, Dict, Iterable, List, Optional, Tuple, Union
 
 import mido
 import numpy as np
@@ -18,6 +18,7 @@ from sklearn.model_selection import train_test_split
 from tensorflow.keras.preprocessing.sequence import pad_sequences
 from tensorflow.keras.preprocessing.text import Tokenizer
 
+from . import constants
 from .constants import (
     BPM_INTERVAL,
     BPM_START_POINT,
@@ -60,40 +61,72 @@ class ChordType(str, enum.Enum):
 
 
 def parse_midi(
-    midi_path: str, num_measures: int, shift_size: int, parsing_midi_pth: Path, num_cores: int
+    source_dir: str,
+    num_measures: int,
+    shift_size: int,
+    output_dir: Union[str, Path],
+    num_cores: int,
 ) -> None:
+    midi_paths = [
+        str(filename)
+        for filename in Path(source_dir).rglob("**/*")
+        if filename.suffix in constants.MIDI_EXTENSIONS
+    ]
 
-    midifiles = []
-
-    for _, (dirpath, _, filenames) in enumerate(os.walk(midi_path)):
-        midi_extensions = [".mid", ".MID", ".MIDI", ".midi"]
-        for ext in midi_extensions:
-            tem = [os.path.join(dirpath, _) for _ in filenames if _.endswith(ext)]
-            if tem:
-                midifiles += tem
-
-    split_midi = np.array_split(np.array(midifiles), num_cores)
+    split_midi = np.array_split(np.array(midi_paths), num_cores)
     split_midi = [x.tolist() for x in split_midi]
     parmap.map(
         parse_midi_map,
         split_midi,
-        num_measures,
-        shift_size,
-        parsing_midi_pth,
+        num_measures=num_measures,
+        shift_size=shift_size,
+        output_dir=output_dir,
         pm_pbar=True,
         pm_processes=num_cores,
     )
 
 
 def parse_midi_map(
-    midifiles: List, num_measures: int, shift_size: int, parsing_midi_pth: Path
+    midi_paths: Iterable[Union[str, Path]],
+    num_measures: int,
+    shift_size: int,
+    output_dir: Union[str, Path],
 ) -> None:
-    for filename in midifiles:
+    def _get_channel_info(_path):
+        _raw_channel_info = {
+            track.name: get_channel(track) for track in mido.MidiFile(filename).tracks
+        }
+        _channel_info = {
+            track_name: channel
+            for track_name, channel in _raw_channel_info.items()
+            if channel is not None
+        }
+        return _channel_info
+
+    def _parse_other_track(
+        _time_to_tick_func: Callable[[float], int],
+        _track: pretty_midi.Instrument,
+        _start_tick: int,
+        _end_tick: int,
+    ):
+        _parsed_track = pretty_midi.Instrument(program=_track.program, name=_track.name)
+        for _note in _track.notes:
+            if (
+                _time_to_tick_func(_note.start) >= _start_tick
+                and _time_to_tick_func(_note.end) <= _end_tick
+            ):
+                _parsed_track.notes.append(copy.deepcopy(_note))
+        return _parsed_track
+
+    for filename in midi_paths:
+        track_to_channel = _get_channel_info(filename)
         midi_data = pretty_midi.PrettyMIDI(filename)
-        if len(midi_data.time_signature_changes) == 1:
-            time_signature: pretty_midi.TimeSignature = midi_data.time_signature_changes[-1]
-        elif len(midi_data.time_signature_changes) > 1:
+
+        time_signature_changes = midi_data.time_signature_changes
+        if len(time_signature_changes) > 1:
             continue
+
+        time_signature = time_signature_changes[-1]
         coordination = time_signature.numerator / time_signature.denominator
         ticks_per_measure = int(midi_data.resolution * DEFAULT_NUM_BEATS * coordination)
         midi_data.tick_to_time(ticks_per_measure)
@@ -132,6 +165,9 @@ def parse_midi_map(
             parsed_notes.append(tmp_note_list)
 
         for i, new_notes in enumerate(parsed_notes):
+            if not new_notes:
+                continue
+
             new_midi_object = pretty_midi.PrettyMIDI(
                 resolution=midi_data.resolution, initial_tempo=float(tempo_infos)
             )
@@ -148,16 +184,25 @@ def parse_midi_map(
                     new_midi_object.time_signature_changes.append(ts)
 
             # 노트 입력
-            new_instrument = pretty_midi.Instrument(program=midi_data.instruments[0].program)
+            new_instrument = pretty_midi.Instrument(
+                program=midi_data.instruments[0].program, name=midi_data.instruments[0].name
+            )
             new_instrument.notes = new_notes
             new_midi_object.instruments.append(new_instrument)
-            filename_without_extension = os.path.splitext(filename.split("/")[-1])[0]
-            new_midi_object.write(
-                os.path.join(
-                    parsing_midi_pth,
-                    filename_without_extension + f"_{num_measures}_{i}.mid",
+            for track in midi_data.instruments[1:]:
+                new_midi_object.instruments.append(
+                    _parse_other_track(
+                        midi_data.time_to_tick,
+                        track,
+                        midi_data.time_to_tick(new_notes[0].start),
+                        midi_data.time_to_tick(new_notes[-1].end),
+                    )
                 )
+            output_path = str(
+                Path(output_dir).joinpath(f"{Path(filename).stem}_{num_measures}_{i}.mid")
             )
+            new_midi_object.write(output_path)
+            apply_channel(output_path, track_to_channel=track_to_channel)
 
 
 def get_inst_from_midi(midi_path: Union[str, Path]) -> int:
@@ -396,11 +441,11 @@ def get_pitch_range_v2(midi_obj: mido.MidiFile, keyswitch_velocity: Optional[int
     return _get_pitch_range(avg_note)
 
 
-def get_inst_from_midi_v2(midi_path: Union[str, Path]) -> Union[int, str]:
+def get_inst_from_midi_v2(midi_path: Union[str, Path]) -> str:
     midi_data = pretty_midi.PrettyMIDI(midi_path)
     if not midi_data.instruments:
         return UNKNOWN
-    return midi_data.instruments[0].program
+    return str(midi_data.instruments[0].program)
 
 
 def get_meta_message_v2(meta_track: mido.MidiTrack, event_type: str) -> Optional[mido.MetaMessage]:
@@ -561,3 +606,27 @@ def encode_chord_progression(poza_metas: List[Dict]) -> List:
     padded_chord_token = pad_sequences(encoded_chord_token)
 
     return padded_chord_token
+
+
+def get_channel(track: mido.MidiTrack) -> int:
+    for event in track:
+        # `channel_prefix` 이벤트의 채널이 15로 설정되어 있는 경우가 있어 해당 이벤트는 제외
+        if hasattr(event, "channel") and event.type != "channel_prefix":
+            return event.channel
+
+
+def apply_channel(midi_path: Union[str, Path], track_to_channel: Dict[str, int]) -> None:
+    midi_obj = mido.MidiFile(midi_path)
+    new_midi_obj = copy.deepcopy(midi_obj)
+    new_tracks = []
+    for track in midi_obj.tracks:
+        new_track = mido.MidiTrack()
+        for event in track:
+            target_channel = track_to_channel.get(track.name)
+            if hasattr(event, "channel") and target_channel is not None:
+                event = event.copy(channel=target_channel)
+
+            new_track.append(event)
+        new_tracks.append(new_track)
+    new_midi_obj.tracks = new_tracks
+    new_midi_obj.save(midi_path)

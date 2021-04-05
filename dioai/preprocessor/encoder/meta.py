@@ -186,6 +186,16 @@ class PozalabsMetaEncoder(BaseMetaEncoder):
         return encode_meta(midi_meta, encoding_maps_override=self.encoding_maps_override)
 
 
+class Pozalabs2MetaEncoder(BaseMetaEncoder):
+    name = "pozalabs2"
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+
+    def encode(self, midi_meta: MidiMeta) -> List[int]:
+        return encode_meta(midi_meta)
+
+
 META_ENCODERS: Dict[str, Type[BaseMetaEncoder]] = {
     obj.name: obj
     for _, obj in globals().items()
