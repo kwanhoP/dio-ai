@@ -34,6 +34,7 @@ def test_encode():
         pitch_range="mid",
         num_measures="4",
         inst="0",
+        genre="newage",
     )
     expected = [
         # 39 + Offset.BPM (423)
@@ -48,6 +49,8 @@ def test_encode():
         514,
         # 0 + Offset.INST (517)
         517,
+        # 0 + Offset.GENRE (526)
+        526,
     ]
     encoded_meta = meta.encode_meta(midi_meta)
     assert encoded_meta == expected
@@ -66,6 +69,7 @@ class TestPozalabsMetaEncoder:
             pitch_range="mid",
             num_measures="4",
             inst="acoustic_piano",
+            genre="newage",
         )
         expected = [
             # 39 + Offset.BPM (423)
@@ -80,6 +84,8 @@ class TestPozalabsMetaEncoder:
             514,
             # 0 + Offset.INST (517)
             517,
+            # 0 + Offset.GENRE (526)
+            526,
         ]
         encoded_meta = self.meta_encoder.encode(midi_meta)
         assert encoded_meta == expected

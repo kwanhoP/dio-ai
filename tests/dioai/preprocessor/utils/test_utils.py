@@ -1,6 +1,6 @@
 import os
 import tempfile
-from typing import Optional
+from typing import Dict, Optional
 
 import mido
 import pretty_midi
@@ -148,6 +148,18 @@ def test_get_pitch_range_v2(
 def test_get_inst_from_midi_v2(midi_path: str, expected: str, request: pytest.FixtureRequest):
     midi_path = request.getfixturevalue(midi_path)
     assert utils.get_inst_from_midi_v2(midi_path) == expected
+
+
+@pytest.mark.parametrize(
+    "midi_path, path_to_genre, expected",
+    [
+        ("BG-000005-c_1_0_0_8_5.mid", {"BG-000005-c": "newage"}, "newage"),
+        ("Jazz_www.thejazzpage.de_MIDIRip/whisper.mid", None, "jazz"),
+        ("Lyric-Pieces-Opus-12-Nr-1.mid", None, "cinematic"),
+    ],
+)
+def test_get_genre(midi_path: str, path_to_genre: Optional[Dict[str, str]], expected: str):
+    assert utils.get_genre(midi_path=midi_path, path_to_genre=path_to_genre) == expected
 
 
 @pytest.mark.parametrize(

@@ -13,6 +13,7 @@ class MidiInfo:
     pitch_range: int
     num_measure: int
     inst: int
+    genre: str
 
     # note
     note_seq: List[int]
@@ -25,3 +26,4 @@ class MidiMeta(BaseModel):
     pitch_range: str
     num_measures: Union[int, str]
     inst: str
+    genre: str

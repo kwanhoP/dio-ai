@@ -5,6 +5,7 @@ import http
 import inspect
 import math
 import os
+import re
 import tempfile
 from pathlib import Path
 from typing import Any, Callable, Dict, Iterable, List, Optional, Tuple, Union
@@ -17,6 +18,8 @@ import requests
 from sklearn.model_selection import train_test_split
 from tensorflow.keras.preprocessing.sequence import pad_sequences
 from tensorflow.keras.preprocessing.text import Tokenizer
+
+from dioai.exceptions import UnprocessableMidiError
 
 from . import constants
 from .constants import (
@@ -446,6 +449,23 @@ def get_inst_from_midi_v2(midi_path: Union[str, Path]) -> str:
     if not midi_data.instruments:
         return UNKNOWN
     return str(midi_data.instruments[0].program)
+
+
+def get_genre(midi_path: Union[str, Path], path_to_genre: Optional[Dict[str, str]] = None) -> str:
+    midi_path = str(midi_path)
+
+    if path_to_genre is not None:
+        # TODO: 매우 비효율적인 연산. 리팩터링할 것
+        pattern = re.compile("|".join(path_to_genre.keys()))
+        matched = pattern.match(midi_path)
+        if matched is None:
+            raise UnprocessableMidiError("Could not find filename from meta csv")
+        return path_to_genre.get(matched.group(), UNKNOWN)
+
+    for genre in constants.GENRE_MAP:
+        if genre in str(midi_path):
+            return genre
+    return constants.DEFAULT_GENRE
 
 
 def get_meta_message_v2(meta_track: mido.MidiTrack, event_type: str) -> Optional[mido.MetaMessage]:

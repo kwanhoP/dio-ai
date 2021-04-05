@@ -18,6 +18,7 @@ DEFAULT_ENCODING_MAPS = {
     "time_signature": constants.TIME_SIG_MAP,
     "pitch_range": constants.PITCH_RANGE_MAP,
     "inst": constants.PROGRAM_INST_MAP,
+    "genre": constants.GENRE_MAP,
 }
 
 
@@ -27,6 +28,7 @@ class Unknown(int, enum.Enum):
     TIME_SIGNATURE = 489
     PITCH_RANGE = 507
     INST = 516
+    GENRE = 525
 
 
 class Offset(int, enum.Enum):
@@ -37,6 +39,7 @@ class Offset(int, enum.Enum):
     MEASURES_4 = 514
     MEASURES_8 = 515
     INST = 517
+    GENRE = 526
 
 
 ENCODERS: Dict[str, EncodeFunc] = dict()
@@ -132,6 +135,13 @@ def encode_num_measures(num_measures: Union[int, str]) -> int:
 @encode_unknown()
 def encode_inst(inst: Union[int, str], encoding_map: Dict[str, int]) -> int:
     return encoding_map[inst]
+
+
+@register_encoder
+@add_offset
+@encode_unknown()
+def encode_genre(genre: str, encoding_map: Dict[str, int]) -> int:
+    return encoding_map[genre]
 
 
 def encode_meta(

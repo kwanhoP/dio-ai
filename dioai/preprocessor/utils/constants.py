@@ -404,3 +404,22 @@ POZA_INST_MAP = {
     "xylophone": 2,
     "zither": 3,
 }
+
+DEFAULT_GENRE = "cinematic"
+GENRE_MAP = {
+    "newage": 0,
+    "cinematic": 1,
+    "children": 2,
+    "jazz": 3,
+    "funk": 4,
+    "edm": 5,
+    "acoustic": 6,
+    # country -> acoustic
+    "country": 6,
+    "hiphop": 7,
+    "rock": 8,
+    "ambient": 9,
+    "latin": 10,
+    "reggae": 11,
+    "traditional": 12,
+}

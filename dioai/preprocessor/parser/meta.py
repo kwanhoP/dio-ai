@@ -11,6 +11,8 @@ from dioai.preprocessor import utils
 from dioai.preprocessor.utils import constants
 from dioai.preprocessor.utils.container import MidiMeta
 
+from .utils import TableReader
+
 
 class BaseMetaParser(abc.ABC):
     name = ""
@@ -48,6 +50,7 @@ class RedditMetaParser(BaseMetaParser):
             ),
             num_measures=utils.get_num_measures_from_midi(midi_obj.filename),
             inst=utils.get_inst_from_midi_v2(midi_obj.filename),
+            genre=utils.get_genre(midi_path.lower()),
         )
         # reddit 데이터셋을 처리할 때 BPM/Key/Time signature 가 모두 기본값이면 UNKNOWN 처리
         if self.default_to_unknown and _is_all_default_meta(midi_meta):
@@ -69,12 +72,34 @@ class PozalabsMetaParser(BaseMetaParser):
         return MidiMeta(**copied_meta_dict)
 
 
-class Pozalabs2MetaParser(RedditMetaParser):
+class Pozalabs2MetaParser(BaseMetaParser):
     name = "pozalabs2"
 
-    def __init__(self, default_to_unknown: bool = False):
+    def __init__(self, meta_csv_path: Union[str, Path]):
         super().__init__()
-        self.default_to_unknown = default_to_unknown
+        self.genre_info = TableReader(meta_csv_path).get_meta_dict()
+
+    def parse(self, midi_path: Union[str, Path]) -> MidiMeta:
+        midi_path = str(midi_path)
+        midi_obj = mido.MidiFile(midi_path)
+        meta_track = midi_obj.tracks[0]
+
+        _get_meta_message_func = functools.partial(utils.get_meta_message_v2, meta_track=meta_track)
+
+        midi_meta = MidiMeta(
+            bpm=utils.get_bpm_v2(_get_meta_message_func(event_type="set_tempo")),
+            audio_key=utils.get_audio_key_v2(_get_meta_message_func(event_type="key_signature")),
+            time_signature=utils.get_time_signature_v2(
+                _get_meta_message_func(event_type="time_signature")
+            ),
+            pitch_range=utils.get_pitch_range_v2(
+                midi_obj=midi_obj, keyswitch_velocity=constants.KeySwitchVelocity.DEFAULT
+            ),
+            num_measures=utils.get_num_measures_from_midi(midi_obj.filename),
+            inst=utils.get_inst_from_midi_v2(midi_obj.filename),
+            genre=utils.get_genre(midi_path, self.genre_info),
+        )
+        return midi_meta
 
 
 META_PARSERS: Dict[str, Type[BaseMetaParser]] = {

@@ -13,4 +13,5 @@ def unknown_meta() -> MidiMeta:
         pitch_range=constants.UNKNOWN,
         num_measures=constants.UNKNOWN,
         inst=constants.UNKNOWN,
+        genre=constants.UNKNOWN,
     )
