@@ -20,6 +20,7 @@ DEFAULT_ENCODING_MAPS = {
     "pitch_range": constants.PITCH_RANGE_MAP,
     "inst": constants.PROGRAM_INST_MAP,
     "genre": constants.GENRE_MAP,
+    "track_category": constants.TRACK_CATEGORY_MAP,
 }
 ATTR_ALIAS = {"min_velocity": "velocity", "max_velocity": "velocity"}
 
@@ -41,6 +42,7 @@ class Unknown(AliasMixin, int, enum.Enum):
     INST = 516
     GENRE = 525
     VELOCITY = 539
+    TRACK_CATEGORY = 567
 
 
 class Offset(AliasMixin, int, enum.Enum):
@@ -53,6 +55,7 @@ class Offset(AliasMixin, int, enum.Enum):
     INST = 517
     GENRE = 526
     VELOCITY = 540
+    TRACK_CATEGORY = 568
 
 
 ENCODERS: Dict[str, EncodeFunc] = dict()
@@ -170,6 +173,13 @@ def encode_min_velocity(velocity: Union[int, str]):
 @encode_unknown()
 def encode_max_velocity(velocity: Union[int, str]):
     return math.ceil(velocity / constants.VELOCITY_INTERVAL)
+
+
+@register_encoder
+@add_offset
+@encode_unknown()
+def encode_track_category(track_category: str, encoding_map: Dict[str, int]) -> int:
+    return encoding_map[track_category]
 
 
 def encode_meta(

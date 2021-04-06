@@ -497,6 +497,11 @@ def get_velocity_range(
     return min(velocities), max(velocities)
 
 
+def get_track_category_from_channel(track: mido.MidiTrack) -> str:
+    """채널을 트랙 카테고리로 매핑합니다."""
+    return constants.CHANNEL_FOR_MELODY.get(get_channel(track), UNKNOWN)
+
+
 def get_meta_message_v2(meta_track: mido.MidiTrack, event_type: str) -> Optional[mido.MetaMessage]:
     messages = [event for event in copy.deepcopy(meta_track) if event.type == event_type]
     if not messages:

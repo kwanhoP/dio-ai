@@ -16,4 +16,5 @@ def unknown_meta() -> MidiMeta:
         genre=constants.UNKNOWN,
         min_velocity=constants.UNKNOWN,
         max_velocity=constants.UNKNOWN,
+        track_category=constants.UNKNOWN,
     )

@@ -54,6 +54,8 @@ class RedditMetaParser(BaseMetaParser):
             genre=utils.get_genre(midi_path.lower()),
             min_velocity=min_velocity,
             max_velocity=max_velocity,
+            # 코드 트랙은 항상 마지막 트랙
+            track_category=utils.get_track_category_from_channel(midi_obj.tracks[1]),
         )
         # reddit 데이터셋을 처리할 때 BPM/Key/Time signature 가 모두 기본값이면 UNKNOWN 처리
         if self.default_to_unknown and _is_all_default_meta(midi_meta):
@@ -108,6 +110,8 @@ class Pozalabs2MetaParser(BaseMetaParser):
             genre=utils.get_genre(midi_path, self.genre_info),
             min_velocity=min_velocity,
             max_velocity=max_velocity,
+            # 코드 트랙은 항상 마지막 트랙
+            track_category=utils.get_track_category_from_channel(midi_obj.tracks[1]),
         )
         return midi_meta
 

@@ -38,6 +38,7 @@ class TestPozalabsMetaEncoder:
             genre="newage",
             min_velocity=12,
             max_velocity=127,
+            track_category="main_melody",
         )
         expected = [
             # 39 + Offset.BPM (423)
@@ -58,6 +59,8 @@ class TestPozalabsMetaEncoder:
             542,
             # 26 + Offset.VELOCITY
             566,
+            # 0 + Offset.TRACK_CATEGORY,
+            568,
         ]
         encoded_meta = self.meta_encoder.encode(midi_meta)
         assert encoded_meta == expected

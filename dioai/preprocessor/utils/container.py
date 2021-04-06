@@ -16,6 +16,7 @@ class MidiInfo:
     genre: str
     min_velocity: int
     max_velocity: int
+    track_category: str
 
     # note
     note_seq: List[int]
@@ -31,3 +32,4 @@ class MidiMeta(BaseModel):
     genre: str
     min_velocity: Union[int, str]
     max_velocity: Union[int, str]
+    track_category: str

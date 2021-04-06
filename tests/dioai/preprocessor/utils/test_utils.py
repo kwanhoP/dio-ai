@@ -86,6 +86,25 @@ def midi_path_fixture_no_instrument():
     os.remove(filepath)
 
 
+# fixture 파라미터 입력 관련 문서:
+# https://docs.pytest.org/en/stable/example/parametrize.html#apply-indirect-on-particular-arguments
+@pytest.fixture(scope="function")
+def midi_track_fixture(request):
+    track_name, channel = request.param
+
+    track = mido.MidiTrack()
+    track.extend(
+        [
+            mido.MetaMessage("track_name", name=track_name, time=0),
+            mido.Message("note_on", channel=channel, note=58, velocity=1, time=0),
+            mido.Message("note_on", channel=channel, note=74, velocity=60, time=0),
+            mido.Message("note_off", channel=channel, note=58, velocity=1, time=440),
+            mido.Message("note_off", channel=channel, note=74, velocity=60, time=440),
+        ]
+    )
+    return track
+
+
 @pytest.mark.parametrize(
     "meta_message, expected",
     [
@@ -179,6 +198,19 @@ def test_get_velocity_range(
     midi_path = request.getfixturevalue(midi_path)
     result = utils.get_velocity_range(midi_path=midi_path, keyswitch_velocity=keyswitch_velocity)
     assert result == expected
+
+
+@pytest.mark.parametrize(
+    "midi_track_fixture, expected",
+    [
+        (("main_melody", 0), "main_melody"),
+        (("main_melody", 1), "sub_melody"),
+        (("main_melody", 15), constants.UNKNOWN),
+    ],
+    indirect=["midi_track_fixture"],
+)
+def test_get_track_category_from_channel(midi_track_fixture: mido.MidiTrack, expected: str):
+    assert utils.get_track_category_from_channel(midi_track_fixture) == expected
 
 
 @pytest.mark.parametrize(

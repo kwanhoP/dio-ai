@@ -426,3 +426,16 @@ GENRE_MAP = {
     "reggae": 11,
     "traditional": 12,
 }
+
+CHANNEL_FOR_MELODY = {
+    0: "main_melody",
+    1: "sub_melody",
+    2: "accompaniment",
+    3: "bass",
+    4: "pad",
+    7: "riff",
+}
+
+TRACK_CATEGORY_MAP = {
+    track_category: channel for channel, track_category in CHANNEL_FOR_MELODY.items()
+}
