@@ -1,208 +1,129 @@
-# 미디 전처리 스크립트 (midi -> tfrecord)
-
 import argparse
 import os
-import warnings
+from multiprocessing import cpu_count
 from pathlib import Path
-from typing import List
+from typing import Optional
 
-import numpy as np
+from dioai.preprocessor import ChunkMidiArguments, ParseMidiArguments
+from dioai.preprocessor.pipeline import PreprocessPipeline
 
-from dioai.logger import logger
-from dioai.preprocessor.chunk_midi import chunk_midi
-from dioai.preprocessor.extract_info import MidiExtractor, extract_midi_info
-from dioai.preprocessor.utils import (
-    augment_data,
-    concat_npy,
-    load_poza_meta,
-    parse_midi,
-    split_train_val_test,
-)
-
-# Pozadataset URL
-URL = "https://backoffice.pozalabs.com/api/samples"
+ALLOWED_DATASETS = ("pozalabs", "pozalabs2", "reddit")
+NO_PREPARATION_BEFORE_ENCODING = ("pozalabs",)
+PRESERVE_CHORD_TRACK = ("pozalabs2",)
+ARGUMENT_GROUP_ADD_FUNC_NAME_FORMAT = "add_{}_argument_group"
+DATASET_NAME_ENV = "DATASET_NAME"
 
 
-def get_parser() -> argparse.ArgumentParser:
-    parser = argparse.ArgumentParser("미디 전처리 후 Numpy array 형식으로 변환합니다.")
-    parser.add_argument(
+def get_root_parser() -> argparse.ArgumentParser:
+    # https://docs.python.org/ko/3/library/argparse.html#parents
+    root_parser = argparse.ArgumentParser("데이터셋 전처리 스크립트", add_help=True)
+    root_parser.add_argument(
+        "--source_dir", type=str, required=True, help="전처리 대상 데이터가 저장된 루트 디렉토리"
+    )
+    root_parser.add_argument(
+        "--num_cores", type=int, help="병렬 처리시 사용할 프로세스 개수", default=max(1, cpu_count() - 4)
+    )
+    return root_parser
+
+
+def add_midi_chunking_argument_group(root_parser: argparse.ArgumentParser) -> None:
+    group = root_parser.add_argument_group("데이터셋 청크")
+    group.add_argument(
         "--steps_per_sec",
         type=int,
         default=10,
-        choices=[10, 100],
-        help="각 Chunk의 길이를 계산할 때 1./steps_per_sec 단위로 계산.",
+        choices=(10, 100),
+        help="각 청크의 길이를 계산할 때 사용되는 초당 스텝 (1/step_per_sec으로 계산)",
     )
-    parser.add_argument(
+    group.add_argument(
         "--longest_allowed_space",
         type=int,
         default=2,
-        help="하나의 chunk안에서 제일 긴 space는 longest_allowed_space초를 넘을 수 없다",
+        help="하나의 청크 내에서 허용되는 가장 긴 공백 (쉼표) 길이 (초)",
     )
-    parser.add_argument(
-        "--minimum_chunk_length",
-        type=int,
-        default=8,
-        help="길이가 minimum_chunk_length초 미만인 chunk는 누락된다",
-    )
-    parser.add_argument(
-        "--val_ratio",
-        type=float,
-        default=0.2,
-        help="validation set 비율",
-    )
-    parser.add_argument(
-        "--test_ratio",
-        type=float,
-        default=0.2,
-        help="test set 비율",
-    )
-    parser.add_argument(
-        "--target_dataset",
-        type=str,
-        default="reddit",
-        choices=["reddit", "poza"],
-        help="전처리 대상이 되는 데이터셋 지정, 데이터셋에 따라 전처리 flow 차이가 존재",
-    )
-    parser.add_argument(
-        "--source_midi_dir",
-        type=str,
-        required=True,
-        help="전처리하고자 하는 midi파일들이 들어있는 폴더. 폴더 속 폴더 존재 가능",
-    )
-    parser.add_argument(
+    group.add_argument("--minimum_chunk_length", type=int, default=8, help="청크의 최소 단위 (초)")
+
+
+def add_midi_parsing_argument_group(root_parser: argparse.ArgumentParser) -> None:
+    group = root_parser.add_argument_group("데이터셋 마디 단위 파싱")
+    group.add_argument(
         "--bar_window_size",
-        type=List,
-        default=[4, 8],
-        help="파싱할 미디 마디 수 지정",
-    )
-    parser.add_argument(
-        "--num_cores",
         type=int,
-        default=10,
-        choices=range(1, 20),
-        help="병렬 처리 시 사용할 프로세스 수 지정",
+        nargs="+",
+        default=[4, 8],
+        help="파싱할 마디 수",
     )
-    return parser
+    group.add_argument("--shift_size", type=int, default=1, help="마디 파싱 시 다음 마디 이동 크기 (마디)")
 
 
-def main(args):
-    # args
-    STEPS_PER_SEC = args.steps_per_sec
-    LONGEST_ALLOWED_SPACE = args.longest_allowed_space
-    MINIMUM_CHUNK_LENGTH = args.minimum_chunk_length
-    VAL_RATIO = args.val_ratio
-    TEST_RATIO = args.test_ratio
-    TARGET_DATASET = args.target_dataset
-    STANDARD_WINDOW_SIZE = args.bar_window_size
-    num_cores = args.num_cores
+def add_reddit_argument_group(root_parser: argparse.ArgumentParser) -> None:
+    add_midi_chunking_argument_group(root_parser)
+    add_midi_parsing_argument_group(root_parser)
 
-    # sub-path parsing
-    midi_dataset_paths = Path(args.source_midi_dir)
-    subset_dir = os.listdir(midi_dataset_paths)
-    for subset in subset_dir:
-        midi_dataset_path = midi_dataset_paths / subset
 
-        # 이미 전처리 완료된 subset 폴더는 건너 뜀
-        encode_npy_pth = midi_dataset_path / "output_npy" / "input_train.npy"
-        if encode_npy_pth.exists():
-            logger.info(f"------Already processed: {subset}-------")
-            continue
+add_pozalabs2_argument_group = add_reddit_argument_group
 
-        logger.info(f"------Start processing: {subset}-------")
-        for sub_dir in [
-            "chunked",
-            "parsed",
-            "tmp",
-            "output_npy",
-            "npy_tmp",
-            "augmented",
-            "augmented_tmp",
-        ]:
-            pth = midi_dataset_path / sub_dir
-            if not pth.exists():
-                os.makedirs(pth)
-            if sub_dir == "chunked":
-                chunk_midi_dir = pth
-            elif sub_dir == "parsed":
-                parsing_midi_dir = pth
-            elif sub_dir == "tmp":
-                tmp_midi_dir = pth
-            elif sub_dir == "output_npy":
-                encode_npy_dir = pth
-            elif sub_dir == "npy_tmp":
-                encode_tmp_dir = pth
-            elif sub_dir == "augmented":
-                augmented_dir = pth
-            elif sub_dir == "augmented_tmp":
-                augmented_tmp_dir = pth
 
-        # chunk
-        if TARGET_DATASET != "poza":
-            logger.info("-----------START CHUNK-----------")
-            chunk_midi(
-                steps_per_sec=STEPS_PER_SEC,
-                longest_allowed_space=LONGEST_ALLOWED_SPACE,
-                minimum_chunk_length=MINIMUM_CHUNK_LENGTH,
-                midi_dataset_path=midi_dataset_path,
-                chunked_midi_path=chunk_midi_dir,
-                tmp_midi_dir=tmp_midi_dir,
-                num_cores=num_cores,
-                dataset_name=TARGET_DATASET,
-            )
+def add_pozalabs_argument_group(root_parser: argparse.ArgumentParser) -> None:
+    group = root_parser.add_argument_group("포자랩스 데이터 전처리 관련 인자")
+    group.add_argument(
+        "--backoffice_api_url",
+        type=str,
+        default="https://backoffice.pozalabs.com",
+        help="백오피스 API URL",
+    )
 
-        # parsing
-        if TARGET_DATASET != "poza":
-            logger.info("----------START PARSING----------")
-            for window_size in STANDARD_WINDOW_SIZE:
-                parse_midi(
-                    source_dir=chunk_midi_dir,
-                    num_measures=window_size,
-                    shift_size=1,
-                    output_dir=parsing_midi_dir,
-                    num_cores=num_cores,
-                )
 
-        # extract
-        if not os.listdir(parsing_midi_dir):
-            print("정보를 추출할 미디 파일이 없습니다.")
-            continue
+def get_parser(dataset_name: str) -> argparse.ArgumentParser:
+    root_parser = get_root_parser()
+    argument_group_add_func_name = ARGUMENT_GROUP_ADD_FUNC_NAME_FORMAT.format(dataset_name)
+    argument_group_add_func = globals()[argument_group_add_func_name]
+    argument_group_add_func(root_parser)
+    return root_parser
 
-        # augment
-        logger.info("----------START AUGMENTATION----------")
-        augment_data(
-            midi_dataset_path,
-            augmented_dir,
-            augmented_tmp_dir,
-            data=TARGET_DATASET,
-            num_cores=num_cores,
+
+def prepare_path(_path) -> Path:
+    return Path(_path).expanduser()
+
+
+def get_dataset_name() -> Optional[str]:
+    return os.getenv("DATASET_NAME")
+
+
+def main(args: argparse.Namespace) -> None:
+    dataset_name = get_dataset_name()
+    source_dir = prepare_path(args.source_dir)
+    pipeline = PreprocessPipeline(dataset_name)
+
+    if dataset_name in NO_PREPARATION_BEFORE_ENCODING:
+        dataset_extra_args = dict(backoffice_api_url=args.backoffice_api_url)
+    else:
+        dataset_extra_args = dict(
+            chunk_midi_arguments=ChunkMidiArguments(
+                steps_per_sec=args.steps_per_sec,
+                longest_allowed_space=args.longest_allowed_space,
+                minimum_chunk_length=args.minimum_chunk_length,
+                preserve_chord_track=dataset_name in PRESERVE_CHORD_TRACK,
+            ),
+            parse_midi_arguments=ParseMidiArguments(
+                bar_window_size=args.bar_window_size,
+                shift_size=args.shift_size,
+            ),
         )
 
-        logger.info("-----------START EXTRACT---------")
-
-        if TARGET_DATASET == "poza":
-            poza_metas = load_poza_meta(URL)
-            for poza_meta in poza_metas:
-                metadata = MidiExtractor(
-                    pth=None, keyswitch_velocity=None, default_pitch_range=None, poza_meta=poza_meta
-                ).parse_poza()
-                print(metadata)  # test용 추후 삭제 예정
-
-        else:
-            extract_midi_info(parsing_midi_dir, encode_tmp_dir, num_cores)
-
-            # load, concat and save npy
-            input_npy, target_npy = concat_npy(encode_tmp_dir)
-
-            # split and save npy(results)
-            splits = split_train_val_test(input_npy, target_npy, VAL_RATIO, TEST_RATIO)
-
-            for split_name, value in splits.items():
-                np.save(os.path.join(encode_npy_dir, split_name), value)
-
-            logger.info(f"------Finish processing: {subset}-------")
+    pipeline(source_dir=source_dir, num_cores=args.num_cores, **dataset_extra_args)
 
 
 if __name__ == "__main__":
-    args, _ = get_parser().parse_known_args()  # noqa: F403
-    warnings.filterwarnings("ignore")
-    main(args)
+    # `DATASET_NAME`을 환경 변수로 전달해야 합니다.
+    # e.g.) DATASET_NAME=pozalabs python3 preprocess_v2.py ...
+    _dataset_name = get_dataset_name()
+    if _dataset_name is None:
+        raise RuntimeError("You must set DATASET_NAME as environment variable")
+
+    if _dataset_name not in ALLOWED_DATASETS:
+        raise RuntimeError(f"`DATASET_NAME` should be one of {ALLOWED_DATASETS}")
+
+    parser = get_parser(_dataset_name)
+    known_args, _ = parser.parse_known_args()
+    main(known_args)
