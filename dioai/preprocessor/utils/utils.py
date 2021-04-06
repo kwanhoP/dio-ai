@@ -727,7 +727,7 @@ def augment_by_key(midi_path: str, augmented_tmp_dir: str, key_change: int, data
         note.start = note.start - track_offset
         note.end = note.end - track_offset
 
-    if data == "poza":
+    if data == "pozalabs":
         midi.instruments.pop()
     try:
         midi.write(os.path.join(augmented_tmp_dir, midi_id + f"_{new_key}.mid"))
@@ -789,9 +789,9 @@ def augment_data_map(
 
 
 def augment_data(
-    midi_path: str,
-    augmented_dir: Path,
-    augmented_tmp_dir: Path,
+    midi_path: Union[str, Path],
+    augmented_dir: Union[str, Path],
+    augmented_tmp_dir: Union[str, Path],
     data: str,
     num_cores: int,
 ) -> None:

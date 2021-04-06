@@ -19,6 +19,7 @@ class PreprocessPipeline:
         self,
         root_dir: Union[str, Path],
         num_cores: int = max(4, cpu_count() - 2),
+        augment: bool = False,
         *args,
         **kwargs,
     ):
@@ -42,6 +43,7 @@ class PreprocessPipeline:
         preprocessor.preprocess(
             root_dir=root_dir,
             num_cores=num_cores,
+            augment=augment,
             **inject_args(preprocessor.preprocess, **kwargs),
         )
         end_time = time.perf_counter()

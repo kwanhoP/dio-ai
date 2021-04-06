@@ -21,6 +21,7 @@ def get_root_parser() -> argparse.ArgumentParser:
     root_parser.add_argument(
         "--num_cores", type=int, help="병렬 처리시 사용할 프로세스 개수", default=max(1, cpu_count() - 4)
     )
+    root_parser.add_argument("--augment", action="store_true", help="데이터 어그멘테이션 수행 여부")
     return root_parser
 
 
@@ -109,7 +110,9 @@ def main(args: argparse.Namespace) -> None:
             ),
         )
 
-    pipeline(root_dir=root_dir, num_cores=args.num_cores, **dataset_extra_args)
+    pipeline(
+        root_dir=root_dir, num_cores=args.num_cores, augment=args.augment, **dataset_extra_args
+    )
 
 
 if __name__ == "__main__":
