@@ -2,10 +2,12 @@ import abc
 import copy
 import enum
 import inspect
+import tempfile
 from dataclasses import asdict, dataclass, field
 from pathlib import Path
 from typing import Any, Dict, Iterable, List, Optional, Type, Union
 
+import mido
 import numpy as np
 import parmap
 
@@ -109,8 +111,17 @@ class ParseMidiArguments:
 class BasePreprocessor(abc.ABC):
     name = ""
 
-    def __init__(self, *args, **kwargs):
-        pass
+    def __init__(
+        self,
+        meta_parser: BaseMetaParser,
+        meta_encoder: BaseMetaEncoder,
+        note_sequence_encoder: MidiPerformanceEncoder,
+        *args,
+        **kwargs,
+    ):
+        self.meta_parser = meta_parser
+        self.meta_encoder = meta_encoder
+        self.note_sequence_encoder = note_sequence_encoder
 
     @abc.abstractmethod
     def preprocess(self, *args, **kwargs):
@@ -131,6 +142,17 @@ class BasePreprocessor(abc.ABC):
             data=self.name,
         )
 
+    def encode_note_sequence(self, midi_path: Union[str, Path]) -> np.ndarray:
+        # TODO
+        # 1. 불필요한 io 작업 제거 (현재는 어쩔 수 없이 일단 이렇게 사용)
+        # 2. 코드 트랙 제거시 좀더 우아한 방법 사용
+        with tempfile.NamedTemporaryFile(suffix=Path(midi_path).suffix) as f:
+            midi_obj = mido.MidiFile(midi_path)
+            if len(midi_obj.tracks) > 2:
+                midi_obj.tracks.pop(-1)
+            midi_obj.save(f.name)
+            return np.array(self.note_sequence_encoder.encode(f.name))
+
 
 class RedditPreprocessor(BasePreprocessor):
     name = "reddit"
@@ -143,10 +165,13 @@ class RedditPreprocessor(BasePreprocessor):
         *args,
         **kwargs,
     ):
-        super().__init__(*args, **kwargs)
-        self.meta_parser = meta_parser
-        self.meta_encoder = meta_encoder
-        self.note_sequence_encoder = note_sequence_encoder
+        super().__init__(
+            meta_parser=meta_parser,
+            meta_encoder=meta_encoder,
+            note_sequence_encoder=note_sequence_encoder,
+            *args,
+            **kwargs,
+        )
 
     def preprocess(
         self,
@@ -235,11 +260,8 @@ class RedditPreprocessor(BasePreprocessor):
 
     def _preprocess_midi(self, midi_path: Union[str, Path]):
         encoded_meta = np.array(self._encode_meta(self._parse_meta(midi_path)), dtype=object)
-        encoded_note_sequence = np.array(self._encode_note_sequence(midi_path), dtype=object)
+        encoded_note_sequence = np.array(self.encode_note_sequence(midi_path), dtype=object)
         return EncodingOutput(meta=encoded_meta, note_sequence=encoded_note_sequence)
-
-    def _encode_note_sequence(self, midi_path: Union[str, Path]) -> np.ndarray:
-        return np.array(self.note_sequence_encoder.encode(midi_path))
 
     def _encode_meta(self, midi_meta: MidiMeta) -> np.ndarray:
         return np.array(self.meta_encoder.encode(midi_meta))
@@ -264,10 +286,13 @@ class PozalabsPreprocessor(BasePreprocessor):
         *args,
         **kwargs,
     ):
-        super().__init__(*args, **kwargs)
-        self.meta_parser = meta_parser
-        self.meta_encoder = meta_encoder
-        self.note_sequence_encoder = note_sequence_encoder
+        super().__init__(
+            meta_parser=meta_parser,
+            meta_encoder=meta_encoder,
+            note_sequence_encoder=note_sequence_encoder,
+            *args,
+            **kwargs,
+        )
         self.backoffice_api_url = backoffice_api_url
 
     def preprocess(
@@ -369,7 +394,7 @@ class PozalabsPreprocessor(BasePreprocessor):
     def _preprocess_midi(self, sample_info: Dict[str, Any], midi_path: Union[str, Path]):
         midi_meta = self.meta_parser.parse(meta_dict=sample_info, midi_path=midi_path)
         encoded_meta = np.array(self.meta_encoder.encode(midi_meta), dtype=object)
-        encoded_note_sequence = np.array(self.note_sequence_encoder.encode(midi_path), dtype=object)
+        encoded_note_sequence = np.array(self.encode_note_sequence(midi_path), dtype=object)
         return EncodingOutput(meta=encoded_meta, note_sequence=encoded_note_sequence)
 
     @staticmethod
