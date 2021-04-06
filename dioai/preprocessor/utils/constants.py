@@ -406,6 +406,7 @@ POZA_INST_MAP = {
     "whistle": 5,
     "xylophone": 2,
     "zither": 3,
+    "orgel": 2,
 }
 
 DEFAULT_GENRE = "cinematic"
@@ -439,3 +440,4 @@ CHANNEL_FOR_MELODY = {
 TRACK_CATEGORY_MAP = {
     track_category: channel for channel, track_category in CHANNEL_FOR_MELODY.items()
 }
+NON_KEY_TRACK_CATEGORIES = ("drums", "percussion")

@@ -2,6 +2,7 @@ import abc
 import copy
 import functools
 import inspect
+import re
 from pathlib import Path
 from typing import Any, Dict, Type, Union
 
@@ -74,6 +75,7 @@ class PozalabsMetaParser(BaseMetaParser):
         copied_meta_dict["audio_key"] = (
             copied_meta_dict["audio_key"] + copied_meta_dict["chord_type"]
         )
+        copied_meta_dict["inst"] = remove_number_from_inst(copied_meta_dict["inst"])
         min_velocity, max_velocity = utils.get_velocity_range(
             midi_path,
             keyswitch_velocity=constants.KeySwitchVelocity.get_value(copied_meta_dict["inst"]),
@@ -136,3 +138,9 @@ def _all_default_to_unknown(midi_meta: MidiMeta) -> MidiMeta:
     midi_meta.audio_key = constants.UNKNOWN
     midi_meta.time_signature = constants.UNKNOWN
     return midi_meta
+
+
+def remove_number_from_inst(inst: str) -> str:
+    """포자랩스 샘플 정보에 기입된 악기에서 숫자를 제거합니다. 악기명 형식은 `{inst}-[0-9]`입니다."""
+    inst_number_pattern = re.compile("-[0-9]+")
+    return inst_number_pattern.sub("", inst)

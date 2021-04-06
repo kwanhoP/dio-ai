@@ -3,7 +3,7 @@ import enum
 import inspect
 from dataclasses import asdict, dataclass
 from pathlib import Path
-from typing import Dict, Iterable, List, Type, Union
+from typing import Any, Dict, Iterable, List, Type, Union
 
 import numpy as np
 import parmap
@@ -13,6 +13,7 @@ from . import utils
 from .chunk_midi import chunk_midi
 from .encoder import BaseMetaEncoder, MidiPerformanceEncoder
 from .parser import BaseMetaParser
+from .utils import constants
 from .utils.container import MidiMeta
 
 MIDI_EXTENSIONS = (".mid", ".MID", ".midi", ".MIDI")
@@ -181,6 +182,106 @@ class RedditPreprocessor(BasePreprocessor):
 
 class Pozalabs2Preprocessor(RedditPreprocessor):
     name = "pozalabs2"
+
+
+class PozalabsPreprocessor(BasePreprocessor):
+    name = "pozalabs"
+
+    def __init__(
+        self,
+        meta_parser: BaseMetaParser,
+        meta_encoder: BaseMetaEncoder,
+        note_sequence_encoder: MidiPerformanceEncoder,
+        backoffice_api_url: str,
+        *args,
+        **kwargs,
+    ):
+        super().__init__(*args, **kwargs)
+        self.meta_parser = meta_parser
+        self.meta_encoder = meta_encoder
+        self.note_sequence_encoder = note_sequence_encoder
+        self.backoffice_api_url = backoffice_api_url
+
+    def preprocess(
+        self,
+        source_dir: Union[str, Path],
+        num_cores: int,
+        val_split_ratio: int = 0.1,
+        test_split_ratio: int = 0.1,
+    ):
+        fetched_samples = utils.load_poza_meta(
+            self.backoffice_api_url + "/api/samples", per_page=2000
+        )
+        sample_id_to_path = self._gather_sample_files(source_dir)
+
+        for sub_dir in Path(source_dir).iterdir():
+            if not sub_dir.is_dir():
+                continue
+
+            output_sub_dir = get_output_sub_dir(sub_dir)
+            self.export_encoded_midi(
+                fetched_samples=fetched_samples,
+                encoded_tmp_dir=output_sub_dir.encode_tmp,
+                sample_id_to_path=sample_id_to_path,
+                num_cores=num_cores,
+            )
+            splits = utils.split_train_val_test(
+                *utils.concat_npy(output_sub_dir.encode_tmp),
+                val_ratio=val_split_ratio,
+                test_ratio=test_split_ratio,
+            )
+            for split_name, data_split in splits.items():
+                np.save(str(output_sub_dir.encode_npy.joinpath(split_name)), data_split)
+
+    def export_encoded_midi(
+        self,
+        fetched_samples: List[Dict[str, Any]],
+        sample_id_to_path: Dict[str, str],
+        encoded_tmp_dir: Union[str, Path],
+        num_cores: int,
+    ) -> None:
+        sample_infos_chunk = [
+            arr.tolist() for arr in np.array_split(np.array(fetched_samples), num_cores)
+        ]
+        parmap.map(
+            self._preprocess_midi_chunk,
+            sample_infos_chunk,
+            sample_id_to_path=sample_id_to_path,
+            encode_tmp_dir=encoded_tmp_dir,
+            pm_pbar=True,
+            pm_processes=num_cores,
+        )
+
+    def _preprocess_midi_chunk(
+        self,
+        sample_infos_chunk: Iterable[Dict[str, Any]],
+        sample_id_to_path: Dict[str, str],
+        encode_tmp_dir: Union[str, Path],
+    ):
+        encode_tmp_dir = Path(encode_tmp_dir)
+        for idx, sample_info in enumerate(sample_infos_chunk):
+            if sample_info["track_category"] in constants.NON_KEY_TRACK_CATEGORIES:
+                continue
+
+            encoding_output = self._preprocess_midi(
+                sample_info=sample_info, midi_path=sample_id_to_path[sample_info["id"]]
+            )
+            np.save(encode_tmp_dir.joinpath(f"input_{idx}"), encoding_output.meta)
+            np.save(encode_tmp_dir.joinpath(f"target_{idx}"), encoding_output.note_sequence)
+
+    def _preprocess_midi(self, sample_info: Dict[str, Any], midi_path: Union[str, Path]):
+        midi_meta = self.meta_parser.parse(meta_dict=sample_info, midi_path=midi_path)
+        encoded_meta = np.array(self.meta_encoder.encode(midi_meta), dtype=object)
+        encoded_note_sequence = np.array(self.note_sequence_encoder.encode(midi_path), dtype=object)
+        return EncodingOutput(meta=encoded_meta, note_sequence=encoded_note_sequence)
+
+    @staticmethod
+    def _gather_sample_files(source_dir: Union[str, Path]) -> Dict[str, str]:
+        return {
+            filename.stem: str(filename)
+            for filename in Path(source_dir).rglob("**/*")
+            if filename.suffix in MIDI_EXTENSIONS
+        }
 
 
 PREPROCESSORS: Dict[str, Type[BasePreprocessor]] = {
