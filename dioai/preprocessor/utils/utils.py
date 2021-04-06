@@ -689,11 +689,11 @@ def apply_channel(midi_path: Union[str, Path], track_to_channel: Dict[str, int])
     new_midi_obj.save(midi_path)
 
 
-def augment_by_key(
-    midi_path: str, augmented_tmp_dir: str, key_change: int, data: str, i: int
-) -> Path:
+def augment_by_key(midi_path: str, augmented_tmp_dir: str, key_change: int, data: str) -> Path:
 
     midi = pretty_midi.PrettyMIDI(midi_path)
+    if data == "poza" and len(midi.instruments) == 1:  # drum track
+        return None
     midi_id = Path(midi_path).parts[-1].split(".")[0]
     main_notes = midi.instruments[0].notes
     origin_key = int(midi.key_signature_changes[0].key_number)
@@ -754,7 +754,7 @@ def get_avg_bpm(event_times: np.ndarray, tempo_infos: np.ndarray, end_time: floa
     return _normalize(avg_bpm)
 
 
-def augment_by_bpm(augment_tmp_midi_pth, augmented_dir, bpm_change, i) -> None:
+def augment_by_bpm(augment_tmp_midi_pth, augmented_dir, bpm_change) -> None:
     midi = pretty_midi.PrettyMIDI(augment_tmp_midi_pth)
     event_times, origin_bpm = midi.get_tempo_changes()
 
@@ -781,11 +781,11 @@ def augment_data_map(
     data: str,
 ) -> None:
     for midi_path in midi_list:
-        for i, key_change in enumerate(range(-NUM_KEY_AUGMENT, NUM_KEY_AUGMENT), 1):
-            augment_tmp_midi_pth = augment_by_key(midi_path, augmented_tmp_dir, key_change, data, i)
+        for key_change in range(-NUM_KEY_AUGMENT, NUM_KEY_AUGMENT):
+            augment_tmp_midi_pth = augment_by_key(midi_path, augmented_tmp_dir, key_change, data)
             if augment_tmp_midi_pth is not None:
-                for i, bpm_change in enumerate(range(-NUM_BPM_AUGMENT, NUM_BPM_AUGMENT), 1):
-                    augment_by_bpm(augment_tmp_midi_pth, augmented_dir, bpm_change, i)
+                for bpm_change in range(-NUM_BPM_AUGMENT, NUM_BPM_AUGMENT):
+                    augment_by_bpm(augment_tmp_midi_pth, augmented_dir, bpm_change)
 
 
 def augment_data(
