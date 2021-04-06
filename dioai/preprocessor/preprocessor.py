@@ -1,9 +1,9 @@
 import abc
 import enum
 import inspect
-from dataclasses import asdict, dataclass
+from dataclasses import asdict, dataclass, field
 from pathlib import Path
-from typing import Any, Dict, Iterable, List, Type, Union
+from typing import Any, Dict, Iterable, List, Optional, Type, Union
 
 import numpy as np
 import parmap
@@ -20,6 +20,16 @@ MIDI_EXTENSIONS = (".mid", ".MID", ".midi", ".MIDI")
 
 
 class OutputSubDirName(str, enum.Enum):
+    RAW = "raw"
+    CHUNKED = "chunked"
+    PARSED = "parsed"
+    TMP = "tmp"
+    ENCODE_NPY = "output_npy"
+    ENCODE_TMP = "npy_tmp"
+
+
+class SubDirName(str, enum.Enum):
+    RAW = "raw"
     CHUNKED = "chunked"
     PARSED = "parsed"
     TMP = "tmp"
@@ -36,6 +46,16 @@ class OutputSubDirectory:
     encode_tmp: Union[str, Path]
 
 
+@dataclass
+class SubDirectory:
+    raw: Union[str, Path]
+    encode_npy: Union[str, Path]
+    encode_tmp: Union[str, Path]
+    chunked: Optional[Union[str, Path]] = field(default=None)
+    parsed: Optional[Union[str, Path]] = field(default=None)
+    tmp: Optional[Union[str, Path]] = field(default=None)
+
+
 def get_output_sub_dir(root_dir: Union[str, Path]) -> OutputSubDirectory:
     result = dict()
     for name, member in OutputSubDirName.__members__.items():
@@ -43,6 +63,22 @@ def get_output_sub_dir(root_dir: Union[str, Path]) -> OutputSubDirectory:
         output_dir.mkdir(exist_ok=True, parents=True)
         result[name.lower()] = output_dir
     return OutputSubDirectory(**result)
+
+
+def get_sub_dir(
+    root_dir: Union[str, Path], exclude: Optional[Iterable[str]] = None
+) -> SubDirectory:
+    result = dict()
+    for name, member in SubDirName.__members__.items():
+        sub_dir = root_dir.joinpath(member.value)
+        if exclude is not None:
+            if member.value in exclude:
+                continue
+            sub_dir.mkdir(exist_ok=True, parents=True)
+        else:
+            sub_dir.mkdir(exist_ok=True, parents=True)
+        result[name.lower()] = sub_dir
+    return SubDirectory(**result)
 
 
 @dataclass
@@ -94,46 +130,47 @@ class RedditPreprocessor(BasePreprocessor):
 
     def preprocess(
         self,
-        source_dir: Union[str, Path],
+        root_dir: Union[str, Path],
         num_cores: int,
         chunk_midi_arguments: ChunkMidiArguments,
         parse_midi_arguments: ParseMidiArguments,
         val_split_ratio: float = 0.1,
         test_split_ratio: float = 0.1,
     ) -> None:
-        for sub_dir in Path(source_dir).iterdir():
-            if not sub_dir.is_dir():
+        sub_dir = get_sub_dir(root_dir)
+
+        for raw_sub_dir in Path(sub_dir.raw).iterdir():
+            if not raw_sub_dir.is_dir():
                 continue
 
-            output_sub_dir = get_output_sub_dir(sub_dir)
             chunk_midi(
-                midi_dataset_path=sub_dir,
-                chunked_midi_path=output_sub_dir.chunked,
-                tmp_midi_dir=output_sub_dir.tmp,
+                midi_dataset_path=sub_dir.raw,
+                chunked_midi_path=sub_dir.chunked,
+                tmp_midi_dir=sub_dir.tmp,
                 num_cores=num_cores,
                 dataset_name=self.name,
                 **asdict(chunk_midi_arguments),
             )
             for window_size in parse_midi_arguments.bar_window_size:
                 utils.parse_midi(
-                    source_dir=str(output_sub_dir.chunked),
+                    source_dir=str(sub_dir.chunked),
                     num_measures=window_size,
                     shift_size=parse_midi_arguments.shift_size,
-                    output_dir=output_sub_dir.parsed,
+                    output_dir=sub_dir.parsed,
                     num_cores=num_cores,
                 )
             self.export_encoded_midi(
-                parsed_midi_dir=output_sub_dir.parsed,
-                encode_tmp_dir=output_sub_dir.encode_tmp,
+                parsed_midi_dir=sub_dir.parsed,
+                encode_tmp_dir=sub_dir.encode_tmp,
                 num_cores=num_cores,
             )
             splits = utils.split_train_val_test(
-                *utils.concat_npy(output_sub_dir.encode_tmp),
+                *utils.concat_npy(sub_dir.encode_tmp),
                 val_ratio=val_split_ratio,
                 test_ratio=test_split_ratio,
             )
             for split_name, data_split in splits.items():
-                np.save(str(output_sub_dir.encode_npy.joinpath(split_name)), data_split)
+                np.save(str(sub_dir.encode_npy.joinpath(split_name)), data_split)
 
     def export_encoded_midi(
         self, parsed_midi_dir: Union[str, Path], encode_tmp_dir: Union[str, Path], num_cores: int
@@ -204,34 +241,36 @@ class PozalabsPreprocessor(BasePreprocessor):
 
     def preprocess(
         self,
-        source_dir: Union[str, Path],
+        root_dir: Union[str, Path],
         num_cores: int,
         val_split_ratio: int = 0.1,
         test_split_ratio: int = 0.1,
     ):
+        sub_dir = get_sub_dir(
+            root_dir, exclude=(SubDirName.CHUNKED, SubDirName.PARSED, SubDirName.TMP)
+        )
         fetched_samples = utils.load_poza_meta(
             self.backoffice_api_url + "/api/samples", per_page=2000
         )
-        sample_id_to_path = self._gather_sample_files(source_dir)
+        sample_id_to_path = self._gather_sample_files(sub_dir.raw)
 
-        for sub_dir in Path(source_dir).iterdir():
-            if not sub_dir.is_dir():
+        for raw_sub_dir in Path(sub_dir.raw).iterdir():
+            if not raw_sub_dir.is_dir():
                 continue
 
-            output_sub_dir = get_output_sub_dir(sub_dir)
             self.export_encoded_midi(
                 fetched_samples=fetched_samples,
-                encoded_tmp_dir=output_sub_dir.encode_tmp,
+                encoded_tmp_dir=sub_dir.encode_tmp,
                 sample_id_to_path=sample_id_to_path,
                 num_cores=num_cores,
             )
             splits = utils.split_train_val_test(
-                *utils.concat_npy(output_sub_dir.encode_tmp),
+                *utils.concat_npy(sub_dir.encode_tmp),
                 val_ratio=val_split_ratio,
                 test_ratio=test_split_ratio,
             )
             for split_name, data_split in splits.items():
-                np.save(str(output_sub_dir.encode_npy.joinpath(split_name)), data_split)
+                np.save(str(sub_dir.encode_npy.joinpath(split_name)), data_split)
 
     def export_encoded_midi(
         self,

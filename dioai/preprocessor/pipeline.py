@@ -17,7 +17,7 @@ class PreprocessPipeline:
 
     def __call__(
         self,
-        source_dir: Union[str, Path],
+        root_dir: Union[str, Path],
         num_cores: int = max(4, cpu_count() - 2),
         *args,
         **kwargs,
@@ -25,7 +25,7 @@ class PreprocessPipeline:
         meta_parser = MetaParserFactory().create(
             self.dataset_name,
             # meta_csv_path: pozalabs2 데이터셋을 위한 인자
-            meta_csv_path=Path(source_dir).joinpath("meta.csv"),
+            meta_csv_path=Path(root_dir).joinpath("meta.csv"),
         )
         meta_encoder = MetaEncoderFactory().create(self.dataset_name)
         preprocessor = PreprocessorFactory().create(
@@ -40,7 +40,7 @@ class PreprocessPipeline:
         logger.info("Start preprocessing")
         start_time = time.perf_counter()
         preprocessor.preprocess(
-            source_dir=source_dir,
+            root_dir=root_dir,
             num_cores=num_cores,
             **inject_args(preprocessor.preprocess, **kwargs),
         )

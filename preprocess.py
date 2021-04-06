@@ -17,9 +17,7 @@ DATASET_NAME_ENV = "DATASET_NAME"
 def get_root_parser() -> argparse.ArgumentParser:
     # https://docs.python.org/ko/3/library/argparse.html#parents
     root_parser = argparse.ArgumentParser("데이터셋 전처리 스크립트", add_help=True)
-    root_parser.add_argument(
-        "--source_dir", type=str, required=True, help="전처리 대상 데이터가 저장된 루트 디렉토리"
-    )
+    root_parser.add_argument("--root_dir", type=str, required=True, help="전처리 대상 데이터가 저장된 루트 디렉토리")
     root_parser.add_argument(
         "--num_cores", type=int, help="병렬 처리시 사용할 프로세스 개수", default=max(1, cpu_count() - 4)
     )
@@ -92,7 +90,7 @@ def get_dataset_name() -> Optional[str]:
 
 def main(args: argparse.Namespace) -> None:
     dataset_name = get_dataset_name()
-    source_dir = prepare_path(args.source_dir)
+    root_dir = prepare_path(args.root_dir)
     pipeline = PreprocessPipeline(dataset_name)
 
     if dataset_name in NO_PREPARATION_BEFORE_ENCODING:
@@ -111,7 +109,7 @@ def main(args: argparse.Namespace) -> None:
             ),
         )
 
-    pipeline(source_dir=source_dir, num_cores=args.num_cores, **dataset_extra_args)
+    pipeline(root_dir=root_dir, num_cores=args.num_cores, **dataset_extra_args)
 
 
 if __name__ == "__main__":
