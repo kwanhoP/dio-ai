@@ -11,7 +11,13 @@ import numpy as np
 from dioai.logger import logger
 from dioai.preprocessor.chunk_midi import chunk_midi
 from dioai.preprocessor.extract_info import MidiExtractor, extract_midi_info
-from dioai.preprocessor.utils import concat_npy, load_poza_meta, parse_midi, split_train_val_test
+from dioai.preprocessor.utils import (
+    augment_data,
+    concat_npy,
+    load_poza_meta,
+    parse_midi,
+    split_train_val_test,
+)
 
 # Pozadataset URL
 URL = "https://backoffice.pozalabs.com/api/samples"
@@ -109,6 +115,8 @@ def main(args):
             "tmp",
             "output_npy",
             "npy_tmp",
+            "augmented",
+            "augmented_tmp",
         ]:
             pth = midi_dataset_path / sub_dir
             if not pth.exists():
@@ -123,6 +131,10 @@ def main(args):
                 encode_npy_dir = pth
             elif sub_dir == "npy_tmp":
                 encode_tmp_dir = pth
+            elif sub_dir == "augmented":
+                augmented_dir = pth
+            elif sub_dir == "augmented_tmp":
+                augmented_tmp_dir = pth
 
         # chunk
         if TARGET_DATASET != "poza":
@@ -154,6 +166,17 @@ def main(args):
         if not os.listdir(parsing_midi_dir):
             print("정보를 추출할 미디 파일이 없습니다.")
             continue
+
+        # augment
+        logger.info("----------START AUGMENTATION----------")
+        augment_data(
+            midi_dataset_path,
+            augmented_dir,
+            augmented_tmp_dir,
+            data=TARGET_DATASET,
+            num_cores=num_cores,
+        )
+
         logger.info("-----------START EXTRACT---------")
 
         if TARGET_DATASET == "poza":

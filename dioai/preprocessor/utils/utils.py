@@ -39,11 +39,16 @@ from .constants import (
     MEASURES_4,
     MEASURES_8,
     MINOR_KEY,
+    MINOR_KEY_OFFSET,
     NO_META_MESSAGE,
+    NUM_BPM_AUGMENT,
+    NUM_KEY_AUGMENT,
     PITCH_RANGE_CUT,
     PITCH_RANGE_MAP,
     PITCH_RANGE_START_POINT,
     PITCH_RANGE_UNKHOWN,
+    PRETTY_MAJOR_KEY,
+    PRETTY_MINOR_KEY,
     PROGRAM_INST_MAP,
     SIG_TIME_MAP,
     TIME_SIG_MAP,
@@ -682,3 +687,132 @@ def apply_channel(midi_path: Union[str, Path], track_to_channel: Dict[str, int])
         new_tracks.append(new_track)
     new_midi_obj.tracks = new_tracks
     new_midi_obj.save(midi_path)
+
+
+def augment_by_key(
+    midi_path: str, augmented_tmp_dir: str, key_change: int, data: str, i: int
+) -> Path:
+
+    midi = pretty_midi.PrettyMIDI(midi_path)
+    midi_id = Path(midi_path).parts[-1].split(".")[0]
+    main_notes = midi.instruments[0].notes
+    origin_key = int(midi.key_signature_changes[0].key_number)
+
+    try:
+        track_offset = midi.instruments[1].notes[0].start
+    except IndexError:
+        track_offset = midi.instruments[0].notes[0].start
+
+    if origin_key < MINOR_KEY_OFFSET:
+        try:
+            midi.key_signature_changes[0].key_number = PRETTY_MAJOR_KEY[origin_key + key_change]
+        except IndexError:
+            midi.key_signature_changes[0].key_number = PRETTY_MAJOR_KEY[
+                origin_key + key_change - len(PRETTY_MAJOR_KEY)
+            ]
+    else:
+        origin_key = origin_key - MINOR_KEY_OFFSET
+        try:
+            midi.key_signature_changes[0].key_number = PRETTY_MINOR_KEY[origin_key + key_change]
+        except IndexError:
+            midi.key_signature_changes[0].key_number = PRETTY_MINOR_KEY[
+                origin_key + key_change - len(PRETTY_MINOR_KEY)
+            ]
+
+    new_key_number = midi.key_signature_changes[0].key_number
+    new_key = pretty_midi.key_number_to_key_name(new_key_number).lower().replace(" ", "")
+
+    for note in main_notes:
+        note.pitch = note.pitch + key_change
+        note.start = note.start - track_offset
+        note.end = note.end - track_offset
+
+    if data == "poza":
+        midi.instruments.pop()
+    try:
+        midi.write(os.path.join(augmented_tmp_dir, midi_id + f"_{new_key}.mid"))
+    except (AttributeError, ValueError):
+        return None
+    return os.path.join(augmented_tmp_dir, midi_id + f"_{new_key}.mid")
+
+
+def get_avg_bpm(event_times: np.ndarray, tempo_infos: np.ndarray, end_time: float) -> int:
+    def _normalize(_avg_bpm):
+        return _avg_bpm - _avg_bpm % constants.BPM_INTERVAL
+
+    if len(tempo_infos) == 1:
+        return _normalize(tempo_infos[-1])
+
+    event_times_with_end_time = np.concatenate([event_times, [end_time]])
+    # `end_time`까지의 각 BPM 지속 시간
+    bpm_durations = np.diff(event_times_with_end_time)
+    total_bpm = 0
+    for duration, bpm in zip(bpm_durations, tempo_infos):
+        total_bpm += duration * bpm
+
+    avg_bpm = int(total_bpm / end_time)
+    return _normalize(avg_bpm)
+
+
+def augment_by_bpm(augment_tmp_midi_pth, augmented_dir, bpm_change, i) -> None:
+    midi = pretty_midi.PrettyMIDI(augment_tmp_midi_pth)
+    event_times, origin_bpm = midi.get_tempo_changes()
+
+    if len(origin_bpm) > 1:
+        origin_bpm = get_avg_bpm(event_times, origin_bpm, midi.get_end_time())
+
+    mido_object = mido.MidiFile(augment_tmp_midi_pth)
+    augment_midi_name = Path(augment_tmp_midi_pth).parts[-1].split(".")[0]
+    for track in mido_object.tracks:
+        for message in track:
+            if message.type == "set_tempo":
+                new_bpm = float(origin_bpm) + bpm_change * BPM_INTERVAL
+                message.tempo = mido.bpm2tempo(new_bpm)
+    try:
+        mido_object.save(os.path.join(augmented_dir, augment_midi_name + f"_{int(new_bpm)}.mid"))
+    except (AttributeError, ValueError):
+        pass
+
+
+def augment_data_map(
+    midi_list: List,
+    augmented_dir: str,
+    augmented_tmp_dir: str,
+    data: str,
+) -> None:
+    for midi_path in midi_list:
+        for i, key_change in enumerate(range(-NUM_KEY_AUGMENT, NUM_KEY_AUGMENT), 1):
+            augment_tmp_midi_pth = augment_by_key(midi_path, augmented_tmp_dir, key_change, data, i)
+            if augment_tmp_midi_pth is not None:
+                for i, bpm_change in enumerate(range(-NUM_BPM_AUGMENT, NUM_BPM_AUGMENT), 1):
+                    augment_by_bpm(augment_tmp_midi_pth, augmented_dir, bpm_change, i)
+
+
+def augment_data(
+    midi_path: str,
+    augmented_dir: Path,
+    augmented_tmp_dir: Path,
+    data: str,
+    num_cores: int,
+) -> None:
+
+    midifiles = []
+
+    for _, (dirpath, _, filenames) in enumerate(os.walk(midi_path)):
+        midi_extensions = [".mid", ".MID", ".MIDI", ".midi"]
+        for ext in midi_extensions:
+            tem = [os.path.join(dirpath, _) for _ in filenames if _.endswith(ext)]
+            if tem:
+                midifiles += tem
+
+    split_midi = np.array_split(np.array(midifiles), num_cores)
+    split_midi = [x.tolist() for x in split_midi]
+    parmap.map(
+        augment_data_map,
+        split_midi,
+        augmented_dir,
+        augmented_tmp_dir,
+        data,
+        pm_pbar=True,
+        pm_processes=num_cores,
+    )

@@ -20,8 +20,13 @@ class KeySwitchVelocity(int, enum.Enum):
         return cls.DEFAULT.value
 
 
+
+NUM_KEY_AUGMENT = 6
+NUM_BPM_AUGMENT = 2
+
 DRUM_CHANNEL = 9
 CHORD_CHANNEL = 5
+
 MIDI_EXTENSIONS = (".mid", ".MID", ".midi", ".MIDI")
 DEFAULT_NUM_BEATS = 4
 CHORD_TRACK_NAME = "chord"
@@ -73,6 +78,10 @@ VELOCITY_UNKNOWN = 539
 TRACK_CATEGORY_UNKNOWN = 567
 
 NUM_CORES = multiprocessing.cpu_count() - 10  # core 전부 다 쓰면 병목현상 보임
+
+PRETTY_MAJOR_KEY = [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11]
+PRETTY_MINOR_KEY = [12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23]
+MINOR_KEY_OFFSET = 12
 
 TIME_SIG_MAP = {
     "3/2": 0,
