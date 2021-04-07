@@ -18,7 +18,7 @@ class Encoder(nn.Module):
             [layer.EncoderLayer(self.config) for _ in range(self.config["n_layer"])]
         )
 
-    def forward(self, inputs: torch.Longtensor) -> tensor:
+    def forward(self, inputs) -> tensor:
         positions = (
             torch.arange(inputs.size(1), device=inputs.device, dtype=inputs.dtype)
             .expand(inputs.size(0), inputs.size(1))

@@ -137,3 +137,4 @@ tmp*.py
 runs/
 gpt2_config.json
 *.out
+autoencoder_config.json

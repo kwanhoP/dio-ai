@@ -16,8 +16,6 @@ import parmap
 import pretty_midi
 import requests
 from sklearn.model_selection import train_test_split
-from tensorflow.keras.preprocessing.sequence import pad_sequences
-from tensorflow.keras.preprocessing.text import Tokenizer
 
 from dioai.exceptions import UnprocessableMidiError
 
@@ -651,19 +649,6 @@ def concat_npy(encode_tmp_dir):
     target_npy = np.array(target_lst)
 
     return input_npy, target_npy
-
-
-def encode_chord_progression(poza_metas: List[Dict]) -> List:
-    chord_progression_token = []
-    for i in poza_metas:
-        chord_progression_token.append(np.array(i["chord_progressions"]).flatten().tolist())
-
-    tokenizer = Tokenizer()
-    tokenizer.fit_on_texts(chord_progression_token)
-    encoded_chord_token = tokenizer.texts_to_sequences(chord_progression_token)
-    padded_chord_token = pad_sequences(encoded_chord_token)
-
-    return padded_chord_token
 
 
 def get_channel(track: mido.MidiTrack) -> int:

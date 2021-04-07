@@ -1,21 +1,18 @@
 import torch
 
-from dioai.preprocessor import utils
-
 
 class ChordProgressionSet(torch.utils.data.Dataset):
-    def __init__(self, backoffice_url, transform=None):
-        self.poza_metas = utils.load_poza_meta(backoffice_url)
+    def __init__(self, chord_token, transform=None):
         self.transform = transform
+        self.chord_npy = chord_token
 
     def __len__(self):
-        return len(self.poza_metas)
+        return len(self.chord_npy)
 
     def __getitem__(self, idx):
-        chord_tensor = utils.encode_chord_progression(self.poza_metas)
-        chord_sample = chord_tensor[idx]
+        chord_sample = self.chord_npy[idx]
         # 추후 data augmentation 등에 대응하기 위한 transform
         if self.transform:
             chord_sample = self.transform(chord_sample)
 
-        return torch.tensor(chord_sample)
+        return torch.tensor(chord_sample).long()
