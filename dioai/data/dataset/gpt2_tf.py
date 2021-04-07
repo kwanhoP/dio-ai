@@ -76,11 +76,7 @@ class GPT2MetaToNoteTFDataset:
                 for i in range(batch_size):
                     yield {key: batch[key][i] for key in keys}
 
-        new_dataset = tf.data.Dataset.from_generator(
-            _generator, output_signature=self.output_signature
-        )
-        new_dataset = new_dataset.unbatch()
-        return new_dataset
+        return tf.data.Dataset.from_generator(_generator, output_signature=self.output_signature)
 
     def _get_numpy_generator(self):
         for sub_dir in self.data_dir.iterdir():
