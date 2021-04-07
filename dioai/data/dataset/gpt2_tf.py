@@ -9,7 +9,7 @@ import tensorflow as tf
 class GPT2MetaToNoteTFDataset:
     input_filename = "input"
     target_filename = "target"
-    npy_dir_name = "output_npy"
+    npy_dir_name_prefix = "output_npy"
 
     def __init__(self, data_dir: Union[str, Path], split: str):
         self.data_dir = Path(data_dir)
@@ -55,15 +55,12 @@ class GPT2MetaToNoteTFDataset:
         return dataset
 
     def _get_numpy_generator(self):
-        for sub_dir in self.data_dir.glob("**"):
-            if sub_dir.name != self.npy_dir_name:
+        for sub_dir in self.data_dir.iterdir():
+            if not sub_dir.name.startswith(self.npy_dir_name_prefix):
                 continue
 
-            def _get_filename(_is_input):
-                return str(sub_dir.joinpath(self._filename(_is_input)))
-
-            input_features = np.load(_get_filename(True), allow_pickle=True)
-            target_features = np.load(_get_filename(False), allow_pickle=True)
+            input_features = self.load_npy(sub_dir, is_input=True)
+            target_features = self.load_npy(sub_dir, is_input=False)
             for input_feature, target_feature in zip(input_features, target_features):
                 input_ids = np.concatenate([input_feature, target_feature])
                 attention_mask = compute_attention_mask(input_ids)
@@ -72,6 +69,9 @@ class GPT2MetaToNoteTFDataset:
                     "attention_mask": attention_mask,
                     "labels": copy.deepcopy(input_ids),
                 }
+
+    def load_npy(self, source_dir: Union[str, Path], is_input: bool = True) -> np.ndarray:
+        return np.load(str(source_dir.joinpath(self._filename(is_input))), allow_pickle=True)
 
     def _filename(self, is_input: bool = True) -> str:
         return f"{self.input_filename if is_input else self.target_filename}_{self.split}.npy"
