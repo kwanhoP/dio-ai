@@ -20,7 +20,6 @@ class KeySwitchVelocity(int, enum.Enum):
         return cls.DEFAULT.value
 
 
-
 NUM_KEY_AUGMENT = 6
 NUM_BPM_AUGMENT = 2
 
@@ -447,6 +446,11 @@ CHANNEL_FOR_MELODY = {
 }
 
 TRACK_CATEGORY_MAP = {
-    track_category: channel for channel, track_category in CHANNEL_FOR_MELODY.items()
+    "main_melody": 0,
+    "sub_melody": 1,
+    "accompaniment": 2,
+    "bass": 3,
+    "pad": 4,
+    "riff": 5,
 }
 NON_KEY_TRACK_CATEGORIES = ("drums", "percussion")
