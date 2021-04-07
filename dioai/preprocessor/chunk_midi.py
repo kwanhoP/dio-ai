@@ -2,7 +2,7 @@ import copy
 from dataclasses import dataclass
 from decimal import Decimal
 from pathlib import Path
-from typing import Any, Callable, Dict, List, Tuple, Union, cast
+from typing import Any, Callable, Dict, Iterable, List, Tuple, Union, cast
 
 import mido
 import music21
@@ -355,7 +355,7 @@ def chunk_chord_track(
 
 
 def chunk_midi_map(
-    midi_paths,
+    idx_midi_paths: Tuple[int, Iterable[Union[str, Path]]],
     steps_per_sec,
     longest_allowed_space,
     minimum_chunk_length,
@@ -366,6 +366,8 @@ def chunk_midi_map(
 ) -> None:
     # 소수점 아래 몇 자리 이후를 버릴지
     truncate_under_fp = len(str(steps_per_sec)) - 1
+
+    idx, midi_paths = idx_midi_paths
     for filename in midi_paths:
         filename_wo_ext = Path(filename).stem
         try:
@@ -455,7 +457,9 @@ def chunk_midi_map(
                 if preserve_chord_track:
                     new_midi_object.instruments.append(chunked_chord_track)
 
-                chunked_midi_filename = Path(chunked_midi_path).joinpath(
+                output_dir = Path(chunked_midi_path).joinpath(f"{idx:04d}")
+                output_dir.mkdir(parents=True, exist_ok=True)
+                chunked_midi_filename = output_dir.joinpath(
                     f"{filename_wo_ext}_{inst_idx}_{instrument.program}_{i}.mid"
                 )
                 new_midi_object.write(str(chunked_midi_filename))
@@ -484,7 +488,7 @@ def chunk_midi(
     ]
 
     split_midi = np.array_split(np.array(sorted(midi_paths)), num_cores)
-    split_midi = [x.tolist() for x in split_midi]
+    split_midi = [(idx, arr.tolist()) for idx, arr in enumerate(split_midi)]
     parmap.map(
         chunk_midi_map,
         split_midi,

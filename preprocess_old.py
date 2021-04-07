@@ -60,7 +60,7 @@ def get_parser() -> argparse.ArgumentParser:
         "--target_dataset",
         type=str,
         default="reddit",
-        choices=["reddit", "poza"],
+        choices=["reddit", "pozalabs2", "pozalabs"],
         help="전처리 대상이 되는 데이터셋 지정, 데이터셋에 따라 전처리 flow 차이가 존재",
     )
     parser.add_argument(

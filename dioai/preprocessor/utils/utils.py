@@ -82,7 +82,7 @@ def parse_midi(
     ]
 
     split_midi = np.array_split(np.array(midi_paths), num_cores)
-    split_midi = [x.tolist() for x in split_midi]
+    split_midi = [(idx, arr.tolist()) for idx, arr in enumerate(split_midi)]
     parmap.map(
         parse_midi_map,
         split_midi,
@@ -95,7 +95,7 @@ def parse_midi(
 
 
 def parse_midi_map(
-    midi_paths: Iterable[Union[str, Path]],
+    idx_midi_paths: Tuple[int, Iterable[Union[str, Path]]],
     num_measures: int,
     shift_size: int,
     output_dir: Union[str, Path],
@@ -126,6 +126,7 @@ def parse_midi_map(
                 _parsed_track.notes.append(copy.deepcopy(_note))
         return _parsed_track
 
+    idx, midi_paths = idx_midi_paths
     for filename in midi_paths:
         track_to_channel = _get_channel_info(filename)
         midi_data = pretty_midi.PrettyMIDI(filename)
@@ -206,9 +207,9 @@ def parse_midi_map(
                         midi_data.time_to_tick(new_notes[-1].end),
                     )
                 )
-            output_path = str(
-                Path(output_dir).joinpath(f"{Path(filename).stem}_{num_measures}_{i}.mid")
-            )
+            _output_dir = Path(output_dir).joinpath(f"{idx:04d}")
+            _output_dir.mkdir(parents=True, exist_ok=True)
+            output_path = str(_output_dir.joinpath(f"{Path(filename).stem}_{num_measures}_{i}.mid"))
             new_midi_object.write(output_path)
             apply_channel(output_path, track_to_channel=track_to_channel)
 
@@ -692,7 +693,7 @@ def apply_channel(midi_path: Union[str, Path], track_to_channel: Dict[str, int])
 def augment_by_key(midi_path: str, augmented_tmp_dir: str, key_change: int, data: str) -> Path:
 
     midi = pretty_midi.PrettyMIDI(midi_path)
-    if data == "poza" and len(midi.instruments) == 1:  # drum track
+    if data == "pozalabs" and len(midi.instruments) == 1:  # drum track
         return None
     midi_id = Path(midi_path).parts[-1].split(".")[0]
     main_notes = midi.instruments[0].notes

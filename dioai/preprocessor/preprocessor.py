@@ -153,6 +153,21 @@ class BasePreprocessor(abc.ABC):
             midi_obj.save(f.name)
             return np.array(self.note_sequence_encoder.encode(f.name))
 
+    @staticmethod
+    def concat_npy(source_dir: Union[str, Path]) -> Tuple[List[np.ndarray], List[np.ndarray]]:
+        def _gather(_prefix) -> List[str]:
+            npy_suffix = ".npy"
+            return sorted(
+                str(f)
+                for f in Path(source_dir).rglob("**/*")
+                if f.suffix == npy_suffix and f.stem.startswith(_prefix)
+            )
+
+        def _concat(_npy_list: List[str]) -> List[np.ndarray]:
+            return [np.load(_p, allow_pickle=True) for _p in _npy_list]
+
+        return _concat(_gather("input")), _concat(_gather("target"))
+
 
 class RedditPreprocessor(BasePreprocessor):
     name = "reddit"
@@ -187,46 +202,42 @@ class RedditPreprocessor(BasePreprocessor):
             root_dir, exclude=None if augment else (SubDirName.AUGMENTED, SubDirName.AUGMENTED_TMP)
         )
 
-        for raw_sub_dir in Path(sub_dir.raw).iterdir():
-            if not raw_sub_dir.is_dir():
-                continue
-
-            if augment:
-                self.augment_data(
-                    source_dir=sub_dir.raw,
-                    augmented_dir=sub_dir.augmented,
-                    augmented_tmp_dir=sub_dir.encode_tmp,
-                    num_cores=num_cores,
-                )
-
-            chunk_midi(
-                midi_dataset_path=sub_dir.raw,
-                chunked_midi_path=sub_dir.chunked,
-                tmp_midi_dir=sub_dir.tmp,
-                num_cores=num_cores,
-                dataset_name=self.name,
-                **asdict(chunk_midi_arguments),
-            )
-            for window_size in parse_midi_arguments.bar_window_size:
-                utils.parse_midi(
-                    source_dir=str(sub_dir.chunked),
-                    num_measures=window_size,
-                    shift_size=parse_midi_arguments.shift_size,
-                    output_dir=sub_dir.parsed,
-                    num_cores=num_cores,
-                )
-            self.export_encoded_midi(
-                parsed_midi_dir=sub_dir.parsed,
-                encode_tmp_dir=sub_dir.encode_tmp,
+        if augment:
+            self.augment_data(
+                source_dir=sub_dir.raw,
+                augmented_dir=sub_dir.augmented,
+                augmented_tmp_dir=sub_dir.encode_tmp,
                 num_cores=num_cores,
             )
-            splits = utils.split_train_val_test(
-                *utils.concat_npy(sub_dir.encode_tmp),
-                val_ratio=val_split_ratio,
-                test_ratio=test_split_ratio,
+
+        chunk_midi(
+            midi_dataset_path=sub_dir.raw,
+            chunked_midi_path=sub_dir.chunked,
+            tmp_midi_dir=sub_dir.tmp,
+            num_cores=num_cores,
+            dataset_name=self.name,
+            **asdict(chunk_midi_arguments),
+        )
+        for window_size in parse_midi_arguments.bar_window_size:
+            utils.parse_midi(
+                source_dir=str(sub_dir.chunked),
+                num_measures=window_size,
+                shift_size=parse_midi_arguments.shift_size,
+                output_dir=sub_dir.parsed,
+                num_cores=num_cores,
             )
-            for split_name, data_split in splits.items():
-                np.save(str(sub_dir.encode_npy.joinpath(split_name)), data_split)
+        self.export_encoded_midi(
+            parsed_midi_dir=sub_dir.parsed,
+            encode_tmp_dir=sub_dir.encode_tmp,
+            num_cores=num_cores,
+        )
+        splits = utils.split_train_val_test(
+            *self.concat_npy(sub_dir.encode_tmp),
+            val_ratio=val_split_ratio,
+            test_ratio=test_split_ratio,
+        )
+        for split_name, data_split in splits.items():
+            np.save(str(sub_dir.encode_npy.joinpath(split_name)), data_split)
 
     def export_encoded_midi(
         self, parsed_midi_dir: Union[str, Path], encode_tmp_dir: Union[str, Path], num_cores: int
@@ -263,8 +274,10 @@ class RedditPreprocessor(BasePreprocessor):
                 output_dir = encode_tmp_dir.joinpath(f"{idx:04d}")
                 output_dir.mkdir(exist_ok=True, parents=True)
 
-                np.save(output_dir.joinpath(f"input_{idx}"), encoding_output.meta)
-                np.save(output_dir.joinpath(f"target_{idx}"), encoding_output.note_sequence)
+                np.save(output_dir.joinpath(f"input_{midi_path_idx}"), encoding_output.meta)
+                np.save(
+                    output_dir.joinpath(f"target_{midi_path_idx}"), encoding_output.note_sequence
+                )
             except UnprocessableMidiError:
                 continue
 
@@ -327,31 +340,27 @@ class PozalabsPreprocessor(BasePreprocessor):
             *(sub_dir.raw, sub_dir.augmented) if augment else (sub_dir.raw,)
         )
 
-        for raw_sub_dir in Path(sub_dir.raw).iterdir():
-            if not raw_sub_dir.is_dir():
-                continue
-
-            if augment:
-                self.augment_data(
-                    source_dir=sub_dir.raw,
-                    augmented_dir=sub_dir.augmented,
-                    augmented_tmp_dir=sub_dir.augmented_tmp,
-                    num_cores=num_cores,
-                )
-
-            self.export_encoded_midi(
-                fetched_samples=fetched_samples,
-                encoded_tmp_dir=sub_dir.encode_tmp,
-                sample_id_to_path=sample_id_to_path,
+        if augment:
+            self.augment_data(
+                source_dir=sub_dir.raw,
+                augmented_dir=sub_dir.augmented,
+                augmented_tmp_dir=sub_dir.augmented_tmp,
                 num_cores=num_cores,
             )
-            splits = utils.split_train_val_test(
-                *utils.concat_npy(sub_dir.encode_tmp),
-                val_ratio=val_split_ratio,
-                test_ratio=test_split_ratio,
-            )
-            for split_name, data_split in splits.items():
-                np.save(str(sub_dir.encode_npy.joinpath(split_name)), data_split)
+
+        self.export_encoded_midi(
+            fetched_samples=fetched_samples,
+            encoded_tmp_dir=sub_dir.encode_tmp,
+            sample_id_to_path=sample_id_to_path,
+            num_cores=num_cores,
+        )
+        splits = utils.split_train_val_test(
+            *self.concat_npy(sub_dir.encode_tmp),
+            val_ratio=val_split_ratio,
+            test_ratio=test_split_ratio,
+        )
+        for split_name, data_split in splits.items():
+            np.save(str(sub_dir.encode_npy.joinpath(split_name)), data_split)
 
     def export_encoded_midi(
         self,
@@ -399,7 +408,18 @@ class PozalabsPreprocessor(BasePreprocessor):
         for sample_info_idx, sample_info in enumerate(copied_sample_infos_chunk):
             copied_sample_info = sample_info
             if sample_info.get("augmented", False):
-                parent_sample_id, audio_key, bpm = copied_sample_info["id"].split("_")
+                id_split = copied_sample_info["id"].split("_")
+
+                bpm = copied_sample_info.get("bpm")
+                audio_key = copied_sample_info.get("audio_key")
+                if len(id_split) > 1:
+                    parent_sample_id, audio_key, bpm = id_split
+                else:
+                    parent_sample_id = id_split[0]
+
+                if bpm is None or audio_key is None:
+                    continue
+
                 copied_sample_info = copy.deepcopy(parent_sample_ids_to_info[parent_sample_id])
                 copied_sample_info["id"] = copied_sample_info["id"]
                 copied_sample_info["bpm"] = int(bpm)
