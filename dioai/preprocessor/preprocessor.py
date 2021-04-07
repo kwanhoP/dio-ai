@@ -5,7 +5,7 @@ import inspect
 import tempfile
 from dataclasses import asdict, dataclass, field
 from pathlib import Path
-from typing import Any, Dict, Iterable, List, Optional, Type, Union
+from typing import Any, Dict, Iterable, List, Optional, Tuple, Type, Union
 
 import mido
 import numpy as np
@@ -237,7 +237,11 @@ class RedditPreprocessor(BasePreprocessor):
             if filename.suffix in MIDI_EXTENSIONS
         ]
         _midi_filenames_chunk = np.array_split(np.array(midi_filenames), num_cores)
-        midi_filenames_chunk = [arr.tolist() for arr in _midi_filenames_chunk]
+        # 프로세스별로 별도 idx 할당
+        # TODO: `Manager().Lock`, `Manager().Value`를 사용하도록 수정할 것
+        midi_filenames_chunk = [
+            (idx, arr.tolist()) for idx, arr in enumerate(_midi_filenames_chunk)
+        ]
         parmap.map(
             self._preprocess_midi_chunk,
             midi_filenames_chunk,
@@ -247,14 +251,20 @@ class RedditPreprocessor(BasePreprocessor):
         )
 
     def _preprocess_midi_chunk(
-        self, midi_paths_chunk: Iterable[Union[str, Path]], encode_tmp_dir: Union[str, Path]
+        self,
+        idx_midi_paths_chunk: Tuple[int, Iterable[Union[str, Path]]],
+        encode_tmp_dir: Union[str, Path],
     ) -> None:
+        idx, midi_paths_chunk = idx_midi_paths_chunk
         encode_tmp_dir = Path(encode_tmp_dir)
-        for idx, midi_path in enumerate(midi_paths_chunk):
+        for midi_path_idx, midi_path in enumerate(midi_paths_chunk):
             try:
                 encoding_output = self._preprocess_midi(midi_path)
-                np.save(encode_tmp_dir.joinpath(f"input_{idx}"), encoding_output.meta)
-                np.save(encode_tmp_dir.joinpath(f"target_{idx}"), encoding_output.note_sequence)
+                output_dir = encode_tmp_dir.joinpath(f"{idx:04d}")
+                output_dir.mkdir(exist_ok=True, parents=True)
+
+                np.save(output_dir.joinpath(f"input_{idx}"), encoding_output.meta)
+                np.save(output_dir.joinpath(f"target_{idx}"), encoding_output.note_sequence)
             except UnprocessableMidiError:
                 continue
 
@@ -312,8 +322,9 @@ class PozalabsPreprocessor(BasePreprocessor):
             self.backoffice_api_url + "/api/samples", per_page=2000
         )
 
+        # 인터프리터가 if/else 모두 앞에 * (asterisk)가 붙어있는 것으로 해석하기 때문에 모든 인자에 튜플 사용
         sample_id_to_path = self._gather_sample_files(
-            *(sub_dir.raw, sub_dir.augmented) if augment else sub_dir.raw
+            *(sub_dir.raw, sub_dir.augmented) if augment else (sub_dir.raw,)
         )
 
         for raw_sub_dir in Path(sub_dir.raw).iterdir():
@@ -350,7 +361,8 @@ class PozalabsPreprocessor(BasePreprocessor):
         num_cores: int,
     ) -> None:
         sample_infos_chunk = [
-            arr.tolist() for arr in np.array_split(np.array(fetched_samples), num_cores)
+            (idx, arr.tolist())
+            for idx, arr in enumerate(np.array_split(np.array(fetched_samples), num_cores))
         ]
         parmap.map(
             self._preprocess_midi_chunk,
@@ -363,33 +375,51 @@ class PozalabsPreprocessor(BasePreprocessor):
 
     def _preprocess_midi_chunk(
         self,
-        sample_infos_chunk: Iterable[Dict[str, Any]],
+        idx_sample_infos_chunk: Tuple[int, Iterable[Dict[str, Any]]],
         sample_id_to_path: Dict[str, str],
         encode_tmp_dir: Union[str, Path],
     ):
+        idx, sample_infos_chunk = idx_sample_infos_chunk
+
         copied_sample_infos_chunk = copy.deepcopy(list(sample_infos_chunk))
+        parent_sample_ids_to_info = {
+            sample_info["id"]: sample_info for sample_info in copied_sample_infos_chunk
+        }
+        parent_sample_ids = set(parent_sample_ids_to_info.keys())
+
         copied_sample_infos_chunk.extend(
-            [{"id": sample_id, "augmented": True} for sample_id in sample_id_to_path.keys()]
+            [
+                {"id": sample_id, "augmented": True}
+                for sample_id in sample_id_to_path.keys()
+                if sample_id.split("_")[0] in parent_sample_ids
+            ]
         )
 
         encode_tmp_dir = Path(encode_tmp_dir)
-        for idx, sample_info in enumerate(copied_sample_infos_chunk):
-            if sample_info["track_category"] in constants.NON_KEY_TRACK_CATEGORIES:
-                continue
-
+        for sample_info_idx, sample_info in enumerate(copied_sample_infos_chunk):
             copied_sample_info = sample_info
             if sample_info.get("augmented", False):
-                augmented_sample_id = sample_info["id"]
-                parent_sample_id = augmented_sample_id.split("_")[0]
-                copied_sample_info = copy.deepcopy(sample_info[parent_sample_id])
-                copied_sample_info["id"] = augmented_sample_id
+                parent_sample_id, audio_key, bpm = copied_sample_info["id"].split("_")
+                copied_sample_info = copy.deepcopy(parent_sample_ids_to_info[parent_sample_id])
+                copied_sample_info["id"] = copied_sample_info["id"]
+                copied_sample_info["bpm"] = int(bpm)
+                copied_sample_info["audio_key"] = audio_key
+
+            if copied_sample_info["track_category"] in constants.NON_KEY_TRACK_CATEGORIES:
+                continue
+
+            midi_path = sample_id_to_path.get(copied_sample_info["id"])
+            # 백오피스에는 등록되었으나 아직 다운로드 되지 않은 샘플은 건너뜀
+            if midi_path is None:
+                continue
 
             encoding_output = self._preprocess_midi(
-                sample_info=copied_sample_info,
-                midi_path=sample_id_to_path[copied_sample_info["id"]],
+                sample_info=copied_sample_info, midi_path=midi_path
             )
-            np.save(encode_tmp_dir.joinpath(f"input_{idx}"), encoding_output.meta)
-            np.save(encode_tmp_dir.joinpath(f"target_{idx}"), encoding_output.note_sequence)
+            output_dir = encode_tmp_dir.joinpath(f"{idx:04d}")
+            output_dir.mkdir(exist_ok=True, parents=True)
+            np.save(output_dir.joinpath(f"input_{sample_info_idx}"), encoding_output.meta)
+            np.save(output_dir.joinpath(f"target_{sample_info_idx}"), encoding_output.note_sequence)
 
     def _preprocess_midi(self, sample_info: Dict[str, Any], midi_path: Union[str, Path]):
         midi_meta = self.meta_parser.parse(meta_dict=sample_info, midi_path=midi_path)

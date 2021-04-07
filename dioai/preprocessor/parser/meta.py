@@ -72,9 +72,12 @@ class PozalabsMetaParser(BaseMetaParser):
 
     def parse(self, meta_dict: Dict[str, Any], midi_path: Union[str, Path]) -> MidiMeta:
         copied_meta_dict = copy.deepcopy(meta_dict)
-        copied_meta_dict["audio_key"] = (
-            copied_meta_dict["audio_key"] + copied_meta_dict["chord_type"]
-        )
+        audio_key = copied_meta_dict["audio_key"]
+        # 어그먼트된 데이터의 `audio_key`는 `KEY_MAP`에 정의된 형태로 기입되어 있음
+        if not (utils.ChordType.MAJOR in audio_key or utils.ChordType.MINOR in audio_key):
+            copied_meta_dict["audio_key"] = (
+                copied_meta_dict["audio_key"] + copied_meta_dict["chord_type"]
+            )
         copied_meta_dict["inst"] = remove_number_from_inst(copied_meta_dict["inst"])
         min_velocity, max_velocity = utils.get_velocity_range(
             midi_path,
