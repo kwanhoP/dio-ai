@@ -10,6 +10,11 @@ class GPT2MetaToNoteTFDataset:
     input_filename = "input"
     target_filename = "target"
     npy_dir_name_prefix = "output_npy"
+    output_signature = {
+        "input_ids": tf.TensorSpec(shape=(None,), dtype=tf.int64),
+        "attention_mask": tf.TensorSpec(shape=(None,), dtype=tf.int64),
+        "labels": tf.TensorSpec(shape=(None,), dtype=tf.int64),
+    }
 
     def __init__(self, data_dir: Union[str, Path], split: str):
         self.data_dir = Path(data_dir)
@@ -26,11 +31,7 @@ class GPT2MetaToNoteTFDataset:
     ) -> tf.data.Dataset:
         dataset = tf.data.Dataset.from_generator(
             self._get_numpy_generator,
-            output_signature={
-                "input_ids": tf.TensorSpec(shape=(None,), dtype=tf.int64),
-                "attention_mask": tf.TensorSpec(shape=(None,), dtype=tf.int64),
-                "labels": tf.TensorSpec(shape=(None,), dtype=tf.int64),
-            },
+            output_signature=self.output_signature,
         )
         dataset = dataset.filter(lambda x: tf.shape(x["input_ids"])[0] <= max_length)
         dataset = dataset.padded_batch(
@@ -50,9 +51,36 @@ class GPT2MetaToNoteTFDataset:
         else:
             dataset = dataset.shuffle(shuffle_buffer_size, seed=1203)
             dataset = dataset.take(5000)
-            dataset = dataset.unbatch()
+            dataset = self._get_dataset_with_fixed_batch_size(dataset, batch_size)
+
         dataset = dataset.prefetch(2)
         return dataset
+
+    def _get_dataset_with_fixed_batch_size(
+        self, dataset: tf.data.Dataset, batch_size: int
+    ) -> tf.data.Dataset:
+        """정확히 `batch_size`인 배치만으로 새로운 `Dataset` 인스턴스를 생성합니다.
+        `tf.data.Dataset.padded_batch`가 `batch_size`보다 작은 배치를 리턴할 때가 있는데,
+        이 경우 `torch.utils.data.DataLoader`에서 `tf.data.Dataset.unbatch()` 이후
+        `batch_size`로 다시 배치를 묶을 때 시퀀스 길이가 다른 배치끼리 배치로 묶여 에러가 발생합니다.
+        이 에러를 방지하기 위해 정확히 `batch_size`인 배치만 리턴하도록 합니다.
+        """
+
+        def _generator():
+            keys = self.output_signature.keys()
+            for batch in dataset.as_numpy_iterator():
+                # batch: Dict[str, np.ndarray]
+                if batch["input_ids"].shape[0] != batch_size:
+                    continue
+
+                for i in range(batch_size):
+                    yield {key: batch[key][i] for key in keys}
+
+        new_dataset = tf.data.Dataset.from_generator(
+            _generator, output_signature=self.output_signature
+        )
+        new_dataset = new_dataset.unbatch()
+        return new_dataset
 
     def _get_numpy_generator(self):
         for sub_dir in self.data_dir.iterdir():
