@@ -1,6 +1,7 @@
 import argparse
 import datetime
 import json
+import pprint
 from pathlib import Path
 from typing import Any, Dict, List, Union
 
@@ -9,7 +10,7 @@ import torch
 from dioai.logger import logger
 from dioai.model.model import GP2MetaToNoteModel
 from dioai.preprocessor.encoder import BaseMetaEncoder, MetaEncoderFactory, decode_midi
-from dioai.preprocessor.encoder.meta import META_ENCODING_ORDER, Offset
+from dioai.preprocessor.encoder.meta import ATTR_ALIAS, META_ENCODING_ORDER, Offset
 from dioai.preprocessor.utils import constants
 from dioai.preprocessor.utils.container import MidiInfo, MidiMeta
 
@@ -24,7 +25,19 @@ def get_parser() -> argparse.ArgumentParser:
     parser.add_argument("--time_signature", type=str, choices=list(constants.TIME_SIG_MAP.keys()))
     parser.add_argument("--pitch_range", type=str, choices=list(constants.PITCH_RANGE_MAP.keys()))
     parser.add_argument("--num_measures", type=int, choices=[4, 8])
-    parser.add_argument("--inst", type=str, choices=list(constants.PROGRAM_INST_MAP.keys()))
+    parser.add_argument(
+        "--inst",
+        type=str,
+        choices=list(constants.PROGRAM_INST_MAP.keys()) + list(constants.POZA_INST_MAP.keys()),
+    )
+    parser.add_argument(
+        "--genre", type=str, default="cinematic", choices=list(constants.GENRE_MAP.keys())
+    )
+    parser.add_argument("--min_velocity", type=int, default=40)
+    parser.add_argument("--max_velocity", type=int, default=80)
+    parser.add_argument(
+        "--track_category", type=str, choices=list(constants.TRACK_CATEGORY_MAP.keys())
+    )
     # Sampling
     parser.add_argument("--num_generate", type=int, help="생성 개수")
     parser.add_argument("--top_k", type=int, default=50)
@@ -38,36 +51,27 @@ def load_gen_config(checkpoint_dir: Union[str, Path]) -> Dict[str, Any]:
     return contents
 
 
-def sub_offset(encoded_meta: torch.Tensor) -> List[int]:
-    result = []
+def sub_offset(encoded_meta: torch.Tensor) -> Dict[str, int]:
+    result = dict()
     for meta_name, value in zip(META_ENCODING_ORDER, encoded_meta.numpy().tolist()):
         if meta_name == "num_measures":
-            result.append(value)
+            # TODO: MidiInfo: `num_measure` 필드명 수정 (`MidiMeta`와 통일)
+            # `MidiInfo`에서는 필드명이 `num_measure`
+            result["num_measure"] = value
             continue
 
-        offset = getattr(Offset, meta_name.upper())
+        meta_name_alias = ATTR_ALIAS.get(meta_name, meta_name)
+        offset = getattr(Offset, meta_name_alias.upper())
         adjusted_value = value - offset
-        result.append(adjusted_value)
+        result[meta_name] = adjusted_value
     return result
 
 
-def encode_meta(
-    meta_encoder: BaseMetaEncoder,
-    bpm: int,
-    audio_key: str,
-    time_signature: str,
-    pitch_range: str,
-    num_measures: int,
-    inst: str,
-) -> List[int]:
-    midi_meta = MidiMeta(
-        bpm=bpm,
-        audio_key=audio_key,
-        time_signature=time_signature,
-        pitch_range=pitch_range,
-        num_measures=num_measures,
-        inst=inst,
-    )
+def parse_meta(**kwargs: Any) -> MidiMeta:
+    return MidiMeta(**kwargs)
+
+
+def encode_meta(meta_encoder: BaseMetaEncoder, midi_meta: MidiMeta) -> List[int]:
     return meta_encoder.encode(midi_meta)
 
 
@@ -102,21 +106,11 @@ def decode_note_sequence(
 ):
     for idx, raw_output in enumerate(generation_result):
         # TODO: 인덱싱으로 접근하지 않게 수정하기
-        bpm, audio_key, time_signature, pitch_range, num_measures, inst = sub_offset(
-            raw_output[:num_meta]
-        )
-        note_sequence = raw_output[num_meta:] - constants.META_LEN
+        encoded_meta_dict = sub_offset(raw_output[:num_meta])
+        note_sequence = raw_output[num_meta:]
         decode_midi(
             output_path=Path(output_dir).joinpath(f"decoded_{idx:03d}.mid"),
-            midi_info=MidiInfo(
-                bpm=bpm,
-                audio_key=audio_key,
-                time_signature=time_signature,
-                pitch_range=pitch_range,
-                num_measure=num_measures,  # 디코딩시 사용되지 않는 값
-                inst=inst,
-                note_seq=note_sequence.numpy(),
-            ),
+            midi_info=MidiInfo(**encoded_meta_dict, note_seq=note_sequence.numpy()),
         )
 
 
@@ -124,14 +118,19 @@ def main(args: argparse.Namespace) -> None:
     checkpoint_dir = Path(known_args.checkpoint_dir).expanduser()
     output_dir = Path(known_args.output_dir).expanduser()
 
+    is_pozalabs_inst = args.inst in constants.POZA_INST_MAP
+    dataset_name = "pozalabs" if is_pozalabs_inst else "reddit"
+    logger.info(f"Using Encoder for {dataset_name}")
+
+    meta_encoder_factory = MetaEncoderFactory()
+    midi_meta = parse_meta(**vars(args))
+    logger.info(
+        f"Generating {args.num_generate} samples using following meta:\n"
+        f"{pprint.pformat(midi_meta.dict())}"
+    )
+
     encoded_meta = encode_meta(
-        meta_encoder=MetaEncoderFactory().create("reddit"),
-        bpm=args.bpm,
-        audio_key=args.audio_key,
-        time_signature=args.time_signature,
-        pitch_range=args.pitch_range,
-        num_measures=args.num_measures,
-        inst=args.inst,
+        meta_encoder=meta_encoder_factory.create(dataset_name), midi_meta=midi_meta
     )
     logger.info("Encoded meta")
 
