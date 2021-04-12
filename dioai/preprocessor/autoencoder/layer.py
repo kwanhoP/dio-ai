@@ -88,22 +88,17 @@ class MultiHeadAttentionLayer(nn.Module):
         return output, attn_prob
 
 
-class PoswiseFeedForwardLayer(nn.Module):
+class EncoderPoswiseFeedForwardLayer(nn.Module):
     def __init__(self, config):
         super().__init__()
         self.config = config
 
         self.fc1 = nn.Conv1d(
             in_channels=self.config["data_seq"],
-            out_channels=self.config["data_seq"] * 4,
-            kernel_size=1,
-        )
-        self.fc2 = nn.Conv1d(
-            in_channels=self.config["data_seq"] * 4,
             out_channels=self.config["data_seq"] // 2,
             kernel_size=1,
         )
-        self.fc3 = nn.Conv1d(
+        self.fc2 = nn.Conv1d(
             in_channels=self.config["data_seq"] // 2,
             out_channels=self.config["latent_dim"],
             kernel_size=1,
@@ -114,8 +109,34 @@ class PoswiseFeedForwardLayer(nn.Module):
     def forward(self, inputs: tensor) -> tensor:
 
         output = self.active(self.fc1(inputs))
-        output = self.active(self.fc2(output))
-        output = self.fc3(output)
+        output = self.fc2(output)
+        output = self.dropout(output)
+
+        return output
+
+
+class DecoderPoswiseFeedForwardLayer(nn.Module):
+    def __init__(self, config):
+        super().__init__()
+        self.config = config
+
+        self.fc1 = nn.Conv1d(
+            in_channels=self.config["latent_dim"],
+            out_channels=self.config["data_seq"] // 2,
+            kernel_size=1,
+        )
+        self.fc2 = nn.Conv1d(
+            in_channels=self.config["data_seq"] // 2,
+            out_channels=self.config["data_seq"],
+            kernel_size=1,
+        )
+        self.active = F.gelu
+        self.dropout = nn.Dropout(config["dropout"])
+
+    def forward(self, inputs: tensor) -> tensor:
+
+        output = self.active(self.fc1(inputs))
+        output = self.fc2(output)
         output = self.dropout(output)
 
         return output
@@ -130,10 +151,23 @@ class EncoderLayer(nn.Module):
         self.layer_norm1 = nn.LayerNorm(
             self.config["d_hidn"], eps=self.config["layer_norm_epsilon"]
         )
-        self.fc = PoswiseFeedForwardLayer(self.config)
+        self.fc_enc = EncoderPoswiseFeedForwardLayer(self.config)
 
     def forward(self, inputs: tensor, attn_mask: tensor) -> tensor:
         att_outputs, attn_prob = self.self_attn(inputs, inputs, inputs, attn_mask)
         att_outputs = self.layer_norm1(inputs + att_outputs)
-        fc_outputs = self.fc(att_outputs)
-        return fc_outputs, attn_prob
+        enc_outputs = self.fc_enc(att_outputs)
+
+        return enc_outputs, attn_prob
+
+
+class DecoderLayer(nn.Module):
+    def __init__(self, config):
+        super().__init__()
+        self.config = config
+
+        self.fc_dec = DecoderPoswiseFeedForwardLayer(self.config)
+
+    def forward(self, inputs: tensor) -> tensor:
+        dec_outputs = self.fc_dec(inputs)
+        return dec_outputs

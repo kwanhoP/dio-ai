@@ -26,6 +26,7 @@ pydantic = "^1.8.1"
 sentry-sdk = "^1.0.0"
 boto3 = "^1.17.35"
 music21 = "^6.7.1"
+pytorch-lightning = "^1.2.7"
 
 [tool.poetry.dev-dependencies]
 pre-commit = "^2.10.0"
