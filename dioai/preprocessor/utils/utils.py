@@ -7,14 +7,16 @@ import math
 import os
 import re
 import tempfile
+from multiprocessing import Lock, Pool, Value
 from pathlib import Path
-from typing import Any, Callable, Dict, Iterable, List, Optional, Tuple, Union
+from typing import Any, Callable, Dict, List, Optional, Tuple, Union
 
 import mido
 import numpy as np
 import parmap
 import pretty_midi
 import requests
+import tqdm
 from sklearn.model_selection import train_test_split
 
 from dioai.exceptions import UnprocessableMidiError
@@ -57,6 +59,21 @@ from .constants import (
 from .container import MidiInfo
 
 
+class Counter:
+    def __init__(self):
+        self._value = Value("i", 0)
+        self._lock = Lock()
+
+    @property
+    def value(self) -> int:
+        with self._lock:
+            return self._value.value
+
+    def increment(self):
+        with self._lock:
+            self._value.value += 1
+
+
 class ChordType(str, enum.Enum):
     MAJOR = "major"
     MINOR = "minor"
@@ -66,12 +83,18 @@ class ChordType(str, enum.Enum):
         return list(cls.__members__.values())
 
 
+_counter = Counter()
+
+
 def parse_midi(
     source_dir: str,
+    num_cores: int,
     num_measures: int,
     shift_size: int,
     output_dir: Union[str, Path],
-    num_cores: int,
+    max_keep: int = 20000,
+    preserve_channel: bool = False,
+    chunk_size: int = 200,
 ) -> None:
     midi_paths = [
         str(filename)
@@ -79,24 +102,28 @@ def parse_midi(
         if filename.suffix in constants.MIDI_EXTENSIONS
     ]
 
-    split_midi = np.array_split(np.array(midi_paths), num_cores)
-    split_midi = [(idx, arr.tolist()) for idx, arr in enumerate(split_midi)]
-    parmap.map(
+    parse_midi_map_partial = functools.partial(
         parse_midi_map,
-        split_midi,
         num_measures=num_measures,
         shift_size=shift_size,
         output_dir=output_dir,
-        pm_pbar=True,
-        pm_processes=num_cores,
+        max_keep=max_keep,
+        preserve_channel=preserve_channel,
     )
+
+    with Pool(num_cores) as pool:
+        with tqdm.tqdm(total=len(midi_paths), desc="Parsing") as pbar:
+            for _ in pool.imap_unordered(parse_midi_map_partial, midi_paths, chunksize=chunk_size):
+                pbar.update()
 
 
 def parse_midi_map(
-    idx_midi_paths: Tuple[int, Iterable[Union[str, Path]]],
+    midi_path: Union[str, Path],
     num_measures: int,
     shift_size: int,
     output_dir: Union[str, Path],
+    max_keep: int = 20000,
+    preserve_channel: bool = False,
 ) -> None:
     def _get_channel_info(_path):
         _raw_channel_info = {
@@ -124,91 +151,100 @@ def parse_midi_map(
                 _parsed_track.notes.append(copy.deepcopy(_note))
         return _parsed_track
 
-    idx, midi_paths = idx_midi_paths
-    for filename in midi_paths:
+    filename = midi_path
+
+    output_dir = Path(output_dir).joinpath(f"{_counter.value:04d}")
+    output_dir.mkdir(parents=True, exist_ok=True)
+
+    num_processed = len(list(output_dir.glob("*.mid")))
+    if num_processed > 0 and num_processed > max_keep:
+        _counter.increment()
+
+    track_to_channel = None
+    if preserve_channel:
         track_to_channel = _get_channel_info(filename)
-        midi_data = pretty_midi.PrettyMIDI(filename)
+    midi_data = pretty_midi.PrettyMIDI(filename)
 
-        time_signature_changes = midi_data.time_signature_changes
-        if len(time_signature_changes) > 1:
+    time_signature_changes = midi_data.time_signature_changes
+    if len(time_signature_changes) > 1:
+        return None
+
+    time_signature = time_signature_changes[-1]
+    coordination = time_signature.numerator / time_signature.denominator
+    ticks_per_measure = int(midi_data.resolution * DEFAULT_NUM_BEATS * coordination)
+    midi_data.tick_to_time(ticks_per_measure)
+
+    if not midi_data.instruments:
+        return None
+    notes = midi_data.instruments[0].notes
+    parsing_duration = ticks_per_measure * num_measures
+    shift_duration = ticks_per_measure * shift_size
+
+    # Get Tempo
+    _, tempo_infos = midi_data.get_tempo_changes()
+
+    parsed_notes = []
+    for start_tick in range(
+        midi_data.time_to_tick(notes[0].start),
+        int(midi_data.time_to_tick(midi_data.get_end_time()) - parsing_duration),
+        int(shift_duration),
+    ):
+        end_tick = start_tick + parsing_duration
+        tmp_note_list = []
+        for i, note in enumerate(notes):
+            new_note = copy.deepcopy(note)
+            if (
+                start_tick <= midi_data.time_to_tick(new_note.start) < end_tick
+                or start_tick < midi_data.time_to_tick(new_note.end) <= end_tick
+            ):
+                tmp_note_list.append(new_note)
+        for i, note in enumerate(tmp_note_list):
+            note.start = note.start - midi_data.tick_to_time(start_tick)
+            note.end = note.end - midi_data.tick_to_time(start_tick)
+            if note.start < 0.0:
+                note.start = 0.0
+            if midi_data.time_to_tick(note.end) > parsing_duration:
+                note.end = midi_data.tick_to_time(parsing_duration)
+        parsed_notes.append(tmp_note_list)
+
+    for i, new_notes in enumerate(parsed_notes):
+        if not new_notes:
             continue
 
-        time_signature = time_signature_changes[-1]
-        coordination = time_signature.numerator / time_signature.denominator
-        ticks_per_measure = int(midi_data.resolution * DEFAULT_NUM_BEATS * coordination)
-        midi_data.tick_to_time(ticks_per_measure)
+        new_midi_object = pretty_midi.PrettyMIDI(
+            resolution=midi_data.resolution, initial_tempo=float(tempo_infos)
+        )
+        # key, 박자 입력
+        ks_list = midi_data.key_signature_changes
+        ts_list = midi_data.time_signature_changes
 
-        if not midi_data.instruments:
-            continue
-        notes = midi_data.instruments[0].notes
-        parsing_duration = ticks_per_measure * num_measures
-        shift_duration = ticks_per_measure * shift_size
+        if ks_list:  # ks 가 변화하지 않는 경우 default값으로 설정 필요
+            for ks in ks_list:
+                new_midi_object.key_signature_changes.append(ks)
 
-        # Get Tempo
-        _, tempo_infos = midi_data.get_tempo_changes()
+        if ts_list:  # ts 가 변화하지 않는 경우 default값으로 설정 필요
+            for ts in ts_list:
+                new_midi_object.time_signature_changes.append(ts)
 
-        parsed_notes = []
-        for start_tick in range(
-            midi_data.time_to_tick(notes[0].start),
-            int(midi_data.time_to_tick(midi_data.get_end_time()) - parsing_duration),
-            int(shift_duration),
-        ):
-            end_tick = start_tick + parsing_duration
-            tmp_note_list = []
-            for i, note in enumerate(notes):
-                new_note = copy.deepcopy(note)
-                if (
-                    start_tick <= midi_data.time_to_tick(new_note.start) < end_tick
-                    or start_tick < midi_data.time_to_tick(new_note.end) <= end_tick
-                ):
-                    tmp_note_list.append(new_note)
-            for i, note in enumerate(tmp_note_list):
-                note.start = note.start - midi_data.tick_to_time(start_tick)
-                note.end = note.end - midi_data.tick_to_time(start_tick)
-                if note.start < 0.0:
-                    note.start = 0.0
-                if midi_data.time_to_tick(note.end) > parsing_duration:
-                    note.end = midi_data.tick_to_time(parsing_duration)
-            parsed_notes.append(tmp_note_list)
-
-        for i, new_notes in enumerate(parsed_notes):
-            if not new_notes:
-                continue
-
-            new_midi_object = pretty_midi.PrettyMIDI(
-                resolution=midi_data.resolution, initial_tempo=float(tempo_infos)
-            )
-            # key, 박자 입력
-            ks_list = midi_data.key_signature_changes
-            ts_list = midi_data.time_signature_changes
-
-            if ks_list:  # ks 가 변화하지 않는 경우 default값으로 설정 필요
-                for ks in ks_list:
-                    new_midi_object.key_signature_changes.append(ks)
-
-            if ts_list:  # ts 가 변화하지 않는 경우 default값으로 설정 필요
-                for ts in ts_list:
-                    new_midi_object.time_signature_changes.append(ts)
-
-            # 노트 입력
-            new_instrument = pretty_midi.Instrument(
-                program=midi_data.instruments[0].program, name=midi_data.instruments[0].name
-            )
-            new_instrument.notes = new_notes
-            new_midi_object.instruments.append(new_instrument)
-            for track in midi_data.instruments[1:]:
-                new_midi_object.instruments.append(
-                    _parse_other_track(
-                        midi_data.time_to_tick,
-                        track,
-                        midi_data.time_to_tick(new_notes[0].start),
-                        midi_data.time_to_tick(new_notes[-1].end),
-                    )
+        # 노트 입력
+        new_instrument = pretty_midi.Instrument(
+            program=midi_data.instruments[0].program, name=midi_data.instruments[0].name
+        )
+        new_instrument.notes = new_notes
+        new_midi_object.instruments.append(new_instrument)
+        for track in midi_data.instruments[1:]:
+            new_midi_object.instruments.append(
+                _parse_other_track(
+                    midi_data.time_to_tick,
+                    track,
+                    midi_data.time_to_tick(new_notes[0].start),
+                    midi_data.time_to_tick(new_notes[-1].end),
                 )
-            _output_dir = Path(output_dir).joinpath(f"{idx:04d}")
-            _output_dir.mkdir(parents=True, exist_ok=True)
-            output_path = str(_output_dir.joinpath(f"{Path(filename).stem}_{num_measures}_{i}.mid"))
-            new_midi_object.write(output_path)
+            )
+
+        output_path = str(output_dir.joinpath(f"{Path(filename).stem}_{num_measures}_{i}.mid"))
+        new_midi_object.write(output_path)
+        if preserve_channel:
             apply_channel(output_path, track_to_channel=track_to_channel)
 
 

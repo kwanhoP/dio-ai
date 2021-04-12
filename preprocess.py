@@ -103,10 +103,12 @@ def main(args: argparse.Namespace) -> None:
                 longest_allowed_space=args.longest_allowed_space,
                 minimum_chunk_length=args.minimum_chunk_length,
                 preserve_chord_track=dataset_name in PRESERVE_CHORD_TRACK,
+                preserve_channel=dataset_name in PRESERVE_CHORD_TRACK,
             ),
             parse_midi_arguments=ParseMidiArguments(
                 bar_window_size=args.bar_window_size,
                 shift_size=args.shift_size,
+                preserve_channel=dataset_name in PRESERVE_CHORD_TRACK,
             ),
         )
 
@@ -116,6 +118,9 @@ def main(args: argparse.Namespace) -> None:
 
 
 if __name__ == "__main__":
+    import warnings
+
+    warnings.filterwarnings("ignore")
     # `DATASET_NAME`을 환경 변수로 전달해야 합니다.
     # e.g.) DATASET_NAME=pozalabs python3 preprocess_v2.py ...
     _dataset_name = get_dataset_name()

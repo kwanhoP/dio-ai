@@ -1,14 +1,16 @@
 import copy
+import functools
 from dataclasses import dataclass
 from decimal import Decimal
+from multiprocessing import Lock, Pool, Value
 from pathlib import Path
-from typing import Any, Callable, Dict, Iterable, List, Tuple, Union, cast
+from typing import Any, Callable, Dict, List, Tuple, Union, cast
 
 import mido
 import music21
 import numpy as np
-import parmap
 import pretty_midi
+import tqdm
 
 from dioai.exceptions import UnprocessableMidiError
 from dioai.preprocessor import utils
@@ -354,38 +356,73 @@ def chunk_chord_track(
     return new_chord_track
 
 
+class Counter:
+    def __init__(self):
+        self._value = Value("i", 0)
+        self._lock = Lock()
+
+    @property
+    def value(self) -> int:
+        with self._lock:
+            return self._value.value
+
+    def increment(self):
+        with self._lock:
+            self._value.value += 1
+
+
+_counter = Counter()
+
+
 def chunk_midi_map(
-    idx_midi_paths: Tuple[int, Iterable[Union[str, Path]]],
+    midi_path,
     steps_per_sec,
     longest_allowed_space,
     minimum_chunk_length,
     chunked_midi_path,
     tmp_midi_dir,
     dataset_name: str,
+    max_keep: int = 20000,
     preserve_chord_track: bool = False,
+    preserve_channel: bool = False,
 ) -> None:
     # 소수점 아래 몇 자리 이후를 버릴지
     truncate_under_fp = len(str(steps_per_sec)) - 1
 
-    idx, midi_paths = idx_midi_paths
-    for filename in midi_paths:
-        filename_wo_ext = Path(filename).stem
-        try:
-            _midi_path_by_avg_tempo, average_tempo = normalize_bpm(filename, tmp_midi_dir)
-        except UnprocessableMidiError:
-            continue
+    filename = midi_path
 
-        track_filter_func = TRACK_FILTER_FUNCS[dataset_name]
+    output_dir = Path(chunked_midi_path).joinpath(f"{_counter.value:04d}")
+    output_dir.mkdir(parents=True, exist_ok=True)
+
+    num_processed = len(list(output_dir.glob("*.mid")))
+    if num_processed > 0 and num_processed > max_keep:
+        _counter.increment()
+
+    filename_wo_ext = Path(filename).stem
+    try:
+        _midi_path_by_avg_tempo, average_tempo = normalize_bpm(filename, tmp_midi_dir)
+    except UnprocessableMidiError:
+        return None
+
+    track_filter_func = TRACK_FILTER_FUNCS[dataset_name]
+    try:
         midi_path_with_valid_tracks = track_filter_func(_midi_path_by_avg_tempo)
+    # ValueError: type 0 file must have exactly 1 track
+    except ValueError:
+        return None
 
+    try:
         midi_obj_with_valid_tracks = mido.MidiFile(midi_path_with_valid_tracks)
         mido_tracks_wo_meta = midi_obj_with_valid_tracks.tracks[1:]
-
         midi_data = pretty_midi.PrettyMIDI(midi_path_with_valid_tracks)
-        if not midi_data.instruments:
-            continue
+    except (IndexError, EOFError):
+        return None
 
-        for inst_idx, instrument in enumerate(midi_data.instruments):
+    if not midi_data.instruments:
+        return None
+
+    for inst_idx, instrument in enumerate(midi_data.instruments):
+        if preserve_channel:
             mido_track_name = mido_tracks_wo_meta[inst_idx].name
             if mido_track_name != instrument.name:
                 raise RuntimeError(
@@ -393,76 +430,78 @@ def chunk_midi_map(
                     f"but got: {mido_track_name} != {instrument.name}"
                 )
 
-            if (
-                utils.get_channel(mido_tracks_wo_meta[inst_idx]) == constants.CHORD_CHANNEL
-                or instrument.name == constants.CHORD_TRACK_NAME
-            ):
-                continue
+        if preserve_channel and (
+            utils.get_channel(mido_tracks_wo_meta[inst_idx]) == constants.CHORD_CHANNEL
+            or instrument.name == constants.CHORD_TRACK_NAME
+        ):
+            continue
 
-            new_notes_per_instrument = chunk_track(
-                instrument=instrument,
-                steps_per_sec=steps_per_sec,
-                longest_allowed_space=longest_allowed_space,
-                minimum_chunk_length=minimum_chunk_length,
-                step_in_sec=truncate(1.0 / steps_per_sec, truncate_under_fp, dtype="float"),
-                truncate_under_nth_decimal=truncate_under_fp,
-            )
+        new_notes_per_instrument = chunk_track(
+            instrument=instrument,
+            steps_per_sec=steps_per_sec,
+            longest_allowed_space=longest_allowed_space,
+            minimum_chunk_length=minimum_chunk_length,
+            step_in_sec=truncate(1.0 / steps_per_sec, truncate_under_fp, dtype="float"),
+            truncate_under_nth_decimal=truncate_under_fp,
+        )
 
-            chunked_chord_track = None
-            for i, (notes, chunk_start) in enumerate(new_notes_per_instrument):
+        chunked_chord_track = None
+        track_to_channel = None
+        for i, (notes, chunk_start) in enumerate(new_notes_per_instrument):
+            if preserve_channel:
                 mido_track = mido_tracks_wo_meta[inst_idx]
                 track_to_channel = {mido_track.name: utils.get_channel(mido_track)}
 
-                if not notes:
+            if not notes:
+                continue
+
+            if preserve_chord_track:
+                try:
+                    chord_track = get_chord_track(midi_obj_with_valid_tracks, midi_data)
+                    if preserve_channel:
+                        track_to_channel[chord_track.name] = constants.CHORD_CHANNEL
+                    chunked_chord_track = chunk_chord_track(
+                        chord_track,
+                        chunk_start=chunk_start,
+                        chunk_end=notes[-1].end + chunk_start,
+                        bpm=average_tempo,
+                        time_signature_changes=midi_data.time_signature_changes,
+                        time_to_tick_func=midi_data.time_to_tick,
+                    )
+                except UnprocessableMidiError:
                     continue
 
-                if preserve_chord_track:
-                    try:
-                        chord_track = get_chord_track(midi_obj_with_valid_tracks, midi_data)
-                        track_to_channel[chord_track.name] = constants.CHORD_CHANNEL
-                        chunked_chord_track = chunk_chord_track(
-                            chord_track,
-                            chunk_start=chunk_start,
-                            chunk_end=notes[-1].end + chunk_start,
-                            bpm=average_tempo,
-                            time_signature_changes=midi_data.time_signature_changes,
-                            time_to_tick_func=midi_data.time_to_tick,
-                        )
-                    except UnprocessableMidiError:
-                        continue
+                if not chunked_chord_track.notes:
+                    continue
 
-                    if not chunked_chord_track.notes:
-                        continue
+            new_midi_object = pretty_midi.PrettyMIDI(
+                resolution=midi_data.resolution, initial_tempo=average_tempo
+            )
 
-                new_midi_object = pretty_midi.PrettyMIDI(
-                    resolution=midi_data.resolution, initial_tempo=average_tempo
-                )
+            ks_list = midi_data.key_signature_changes
+            ts_list = midi_data.time_signature_changes
 
-                ks_list = midi_data.key_signature_changes
-                ts_list = midi_data.time_signature_changes
+            if len(ks_list) > MAXIMUM_CHANGE or len(ts_list) > MAXIMUM_CHANGE:
+                break
 
-                if len(ks_list) > MAXIMUM_CHANGE or len(ts_list) > MAXIMUM_CHANGE:
-                    break
+            # ks 가 변화하지 않는 경우 default값으로 설정 필요
+            if ks_list:
+                new_midi_object.key_signature_changes = ks_list
+            # ts 가 변화하지 않는 경우 default값으로 설정 필요
+            if ts_list:
+                new_midi_object.time_signature_changes = ts_list
 
-                # ks 가 변화하지 않는 경우 default값으로 설정 필요
-                if ks_list:
-                    new_midi_object.key_signature_changes = ks_list
-                # ts 가 변화하지 않는 경우 default값으로 설정 필요
-                if ts_list:
-                    new_midi_object.time_signature_changes = ts_list
+            new_instrument = pretty_midi.Instrument(instrument.program, name=instrument.name)
+            new_instrument.notes = notes
+            new_midi_object.instruments.append(new_instrument)
+            if preserve_chord_track:
+                new_midi_object.instruments.append(chunked_chord_track)
 
-                new_instrument = pretty_midi.Instrument(instrument.program, name=instrument.name)
-                new_instrument.notes = notes
-                new_midi_object.instruments.append(new_instrument)
-                if preserve_chord_track:
-                    new_midi_object.instruments.append(chunked_chord_track)
-
-                output_dir = Path(chunked_midi_path).joinpath(f"{idx:04d}")
-                output_dir.mkdir(parents=True, exist_ok=True)
-                chunked_midi_filename = output_dir.joinpath(
-                    f"{filename_wo_ext}_{inst_idx}_{instrument.program}_{i}.mid"
-                )
-                new_midi_object.write(str(chunked_midi_filename))
+            chunked_midi_filename = output_dir.joinpath(
+                f"{filename_wo_ext}_{inst_idx}_{instrument.program}_{i}.mid"
+            )
+            new_midi_object.write(str(chunked_midi_filename))
+            if preserve_channel:
                 utils.apply_channel(chunked_midi_filename, track_to_channel)
 
 
@@ -475,7 +514,10 @@ def chunk_midi(
     tmp_midi_dir,
     num_cores: int,
     dataset_name: str,
+    max_keep: int = 100,
     preserve_chord_track: bool = False,
+    preserve_channel: bool = False,
+    chunk_size: int = 200,
 ) -> None:
     midi_paths = [
         str(filename)
@@ -487,18 +529,20 @@ def chunk_midi(
         and filename.suffix in constants.MIDI_EXTENSIONS
     ]
 
-    split_midi = np.array_split(np.array(sorted(midi_paths)), num_cores)
-    split_midi = [(idx, arr.tolist()) for idx, arr in enumerate(split_midi)]
-    parmap.map(
+    chunk_midi_map_partial = functools.partial(
         chunk_midi_map,
-        split_midi,
         steps_per_sec=steps_per_sec,
         longest_allowed_space=longest_allowed_space,
         minimum_chunk_length=minimum_chunk_length,
         chunked_midi_path=chunked_midi_path,
         tmp_midi_dir=tmp_midi_dir,
         dataset_name=dataset_name,
+        max_keep=max_keep,
         preserve_chord_track=preserve_chord_track,
-        pm_pbar=True,
-        pm_processes=num_cores,
+        preserve_channel=preserve_channel,
     )
+
+    with Pool(num_cores) as pool:
+        with tqdm.tqdm(total=len(midi_paths), desc="Chunk") as pbar:
+            for _ in pool.imap_unordered(chunk_midi_map_partial, midi_paths, chunksize=chunk_size):
+                pbar.update()

@@ -100,12 +100,14 @@ class ChunkMidiArguments:
     longest_allowed_space: int
     minimum_chunk_length: int
     preserve_chord_track: bool = False
+    preserve_channel: bool = False
 
 
 @dataclass
 class ParseMidiArguments:
     bar_window_size: List[int]
     shift_size: int = 1
+    preserve_channel: bool = False
 
 
 class BasePreprocessor(abc.ABC):
