@@ -9,7 +9,7 @@ import re
 import tempfile
 from multiprocessing import Lock, Pool, Value
 from pathlib import Path
-from typing import Any, Callable, Dict, List, Optional, Tuple, Union
+from typing import Any, Dict, List, Optional, Tuple, Union
 
 import mido
 import numpy as np
@@ -127,7 +127,7 @@ def parse_midi_map(
 ) -> None:
     def _get_channel_info(_path):
         _raw_channel_info = {
-            track.name: get_channel(track) for track in mido.MidiFile(filename).tracks
+            _track.name: get_channel(_track) for _track in mido.MidiFile(_path).tracks
         }
         _channel_info = {
             track_name: channel
@@ -136,20 +136,47 @@ def parse_midi_map(
         }
         return _channel_info
 
-    def _parse_other_track(
-        _time_to_tick_func: Callable[[float], int],
-        _track: pretty_midi.Instrument,
+    def _get_parsing_range(
+        _pt_midi: pretty_midi.PrettyMIDI, _notes: List[pretty_midi.Note], _has_chord_track: bool
+    ) -> Tuple[float]:
+        if _has_chord_track:
+            chord_notes = _pt_midi.instruments[1].notes
+            is_incomplete_measure = chord_notes[0].start > 0
+            if is_incomplete_measure:
+                note_start_sec = chord_notes[0].start
+                note_end_sec = chord_notes[-1].end
+                return (note_start_sec, note_end_sec)
+        note_start_sec = _notes[0].start
+        note_end_sec = _pt_midi.get_end_time()
+        return (note_start_sec, note_end_sec)
+
+    def _get_note_segments(
+        _pt_midi: pretty_midi.PrettyMIDI,
+        _notes: List[pretty_midi.Note],
         _start_tick: int,
         _end_tick: int,
-    ):
-        _parsed_track = pretty_midi.Instrument(program=_track.program, name=_track.name)
-        for _note in _track.notes:
+    ) -> List[pretty_midi.Note]:
+        _new_notes = []
+        for _note in _notes:
+            _new_note = copy.deepcopy(_note)
             if (
-                _time_to_tick_func(_note.start) >= _start_tick
-                and _time_to_tick_func(_note.end) <= _end_tick
+                _start_tick <= _pt_midi.time_to_tick(_new_note.start) < _end_tick
+                or _start_tick < _pt_midi.time_to_tick(_new_note.end) <= _end_tick
             ):
-                _parsed_track.notes.append(copy.deepcopy(_note))
-        return _parsed_track
+                if _new_note.start < _pt_midi.tick_to_time(_start_tick):
+                    _new_note.start = _pt_midi.tick_to_time(_start_tick)
+                if _new_note.end > _pt_midi.tick_to_time(_end_tick):
+                    _new_note.end = _pt_midi.tick_to_time(_end_tick)
+                _new_notes.append(_new_note)
+        return _new_notes
+
+    def _shift_start_time(
+        _pt_midi: pretty_midi.PrettyMIDI, _notes: List[pretty_midi.Note], _start_tick: int
+    ) -> List[pretty_midi.Note]:
+        for _note in _notes:
+            _note.start -= _pt_midi.tick_to_time(_start_tick)
+            _note.end -= _pt_midi.tick_to_time(_start_tick)
+        return _notes
 
     filename = midi_path
 
@@ -172,10 +199,11 @@ def parse_midi_map(
     time_signature = time_signature_changes[-1]
     coordination = time_signature.numerator / time_signature.denominator
     ticks_per_measure = int(midi_data.resolution * DEFAULT_NUM_BEATS * coordination)
-    midi_data.tick_to_time(ticks_per_measure)
 
     if not midi_data.instruments:
         return None
+
+    has_chord_track = len(midi_data.instruments) > 1
     notes = midi_data.instruments[0].notes
     parsing_duration = ticks_per_measure * num_measures
     shift_duration = ticks_per_measure * shift_size
@@ -183,33 +211,40 @@ def parse_midi_map(
     # Get Tempo
     _, tempo_infos = midi_data.get_tempo_changes()
 
-    parsed_notes = []
+    note_start_sec, note_end_sec = _get_parsing_range(midi_data, notes, has_chord_track)
+    parsed_notes: List[List[pretty_midi.Note]] = []
+    parsed_chord_notes: List[List[pretty_midi.Note]] = []
     for start_tick in range(
-        midi_data.time_to_tick(notes[0].start),
-        int(midi_data.time_to_tick(midi_data.get_end_time()) - parsing_duration),
+        midi_data.time_to_tick(note_start_sec),
+        int(midi_data.time_to_tick(note_end_sec) - parsing_duration + shift_duration),
         int(shift_duration),
     ):
         end_tick = start_tick + parsing_duration
-        tmp_note_list = []
-        for i, note in enumerate(notes):
-            new_note = copy.deepcopy(note)
-            if (
-                start_tick <= midi_data.time_to_tick(new_note.start) < end_tick
-                or start_tick < midi_data.time_to_tick(new_note.end) <= end_tick
-            ):
-                tmp_note_list.append(new_note)
-        for i, note in enumerate(tmp_note_list):
-            note.start = note.start - midi_data.tick_to_time(start_tick)
-            note.end = note.end - midi_data.tick_to_time(start_tick)
-            if note.start < 0.0:
-                note.start = 0.0
-            if midi_data.time_to_tick(note.end) > parsing_duration:
-                note.end = midi_data.tick_to_time(parsing_duration)
-        parsed_notes.append(tmp_note_list)
+        new_notes = _get_note_segments(midi_data, notes, start_tick, end_tick)
+        new_notes = _shift_start_time(midi_data, new_notes, start_tick)
+        parsed_notes.append(new_notes)
+
+        if has_chord_track:
+            chord_notes = midi_data.instruments[1].notes
+            chord_notes = _get_note_segments(midi_data, chord_notes, start_tick, end_tick)
+            chord_notes = _shift_start_time(midi_data, chord_notes, start_tick)
+            parsed_chord_notes.append(chord_notes)
+
+    if not all(len(notes) for notes in parsed_notes):
+        return
 
     for i, new_notes in enumerate(parsed_notes):
-        if not new_notes:
-            continue
+        if has_chord_track:
+            chord_notes = parsed_chord_notes[i]
+            if not chord_notes:
+                continue
+            else:
+                if min([note.start for note in chord_notes]) > midi_data.tick_to_time(0):
+                    continue
+                if max([note.end for note in chord_notes]) < midi_data.tick_to_time(
+                    parsing_duration
+                ):
+                    continue
 
         new_midi_object = pretty_midi.PrettyMIDI(
             resolution=midi_data.resolution, initial_tempo=float(tempo_infos)
@@ -232,15 +267,13 @@ def parse_midi_map(
         )
         new_instrument.notes = new_notes
         new_midi_object.instruments.append(new_instrument)
-        for track in midi_data.instruments[1:]:
-            new_midi_object.instruments.append(
-                _parse_other_track(
-                    midi_data.time_to_tick,
-                    track,
-                    midi_data.time_to_tick(new_notes[0].start),
-                    midi_data.time_to_tick(new_notes[-1].end),
-                )
+        if has_chord_track:
+            new_chord_track = pretty_midi.Instrument(
+                program=midi_data.instruments[1].program,
+                name=midi_data.instruments[1].name,
             )
+            new_chord_track.notes = chord_notes
+            new_midi_object.instruments.append(new_chord_track)
 
         output_path = str(output_dir.joinpath(f"{Path(filename).stem}_{num_measures}_{i}.mid"))
         new_midi_object.write(output_path)
