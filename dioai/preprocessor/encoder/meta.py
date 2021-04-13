@@ -37,8 +37,8 @@ class AliasMixin:
 class Unknown(AliasMixin, int, enum.Enum):
     BPM = 422
     AUDIO_KEY = 463
-    TIME_SIGNATURE = 489
-    PITCH_RANGE = 507
+    TIME_SIGNATURE = 488
+    PITCH_RANGE = 506
     INST = 516
     GENRE = 525
     VELOCITY = 539
