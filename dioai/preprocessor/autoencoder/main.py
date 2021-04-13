@@ -11,7 +11,7 @@ from dioai.preprocessor.autoencoder import model, utils
 def train(args, config, chord_token):
     trainer = Trainer(
         gpus=1,
-        max_epochs=100,
+        max_epochs=150,
         fast_dev_run=False,
         default_root_dir="/media/experiments/checkpoints/autoencoder_chord_to_vector",
     )
@@ -49,7 +49,7 @@ def main(args):
     with open(args.config, "r") as f:
         config = json.load(f)
     raw_chord_progression, chord_token, n_vocab = utils.encode_chord_progression(
-        BACKOFFICE_URL, args.train
+        BACKOFFICE_URL, args.pozalabs2_chord_progression_path
     )
     config["n_enc_vocab"] = n_vocab + 1
 
@@ -86,6 +86,13 @@ if __name__ == "__main__":
         type=bool,
         required=False,
         help="True: 학습모드, False: inference 모드",
+    )
+    parser.add_argument(
+        "--pozalabs2_chord_progression_path",
+        default="/media/data/dioai/pozalabs2/chord_progression/pozalabs2_chord_progression.npy",
+        type=str,
+        required=False,
+        help="pozalabs2 chordprogression npy 저장 경로",
     )
 
     args = parser.parse_args()

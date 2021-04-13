@@ -7,26 +7,33 @@ from tensorflow.keras.preprocessing.sequence import pad_sequences
 from tensorflow.keras.preprocessing.text import Tokenizer
 
 
-def encode_chord_progression(backoffice_url, train: bool) -> List:
+def encode_chord_progression(backoffice_url, pozalabs2_chord_progression_path) -> Tuple:
     poza_metas = load_poza_meta(backoffice_url)
-    raw_chord_progression = []
+    poza2 = np.load(
+        pozalabs2_chord_progression_path,
+        allow_pickle=True,
+    )
+    poza1 = []
     id_token = []
     for sample in poza_metas:
         chord_lst = np.array(sample["chord_progressions"]).flatten().tolist()
         if 0 < len(chord_lst) <= 128:
-            raw_chord_progression.append(np.array(sample["chord_progressions"]).flatten().tolist())
+            poza1.append(np.array(sample["chord_progressions"]).flatten().tolist())
             id_token.append(sample["id"])
 
     tokenizer = Tokenizer()
-    if not train:
-        raw_chord_progression = list(set(map(tuple, raw_chord_progression)))
-        chord_progression_lst = [list(i) for i in raw_chord_progression]
-    chord_progression_lst = raw_chord_progression
+    poza1_unique = list(set(map(tuple, poza1)))
+    poza2_unique = list(set(map(tuple, poza2)))
+
+    poza_total = poza1_unique + poza2_unique
+    poza_total_unique = list(set(map(tuple, poza_total)))
+
+    chord_progression_lst = [list(i) for i in poza_total_unique]
     tokenizer.fit_on_texts(chord_progression_lst)
     encoded_chord_token = tokenizer.texts_to_sequences(chord_progression_lst)
     padded_chord_token = pad_sequences(encoded_chord_token)
 
-    return raw_chord_progression, padded_chord_token, len(tokenizer.word_index)
+    return poza_total_unique, padded_chord_token, len(tokenizer.word_index)
 
 
 def load_poza_meta(request_url: str, per_page: int = 1000) -> List[Dict[str, Any]]:
