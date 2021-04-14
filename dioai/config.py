@@ -5,7 +5,7 @@ import datetime
 import json
 from dataclasses import asdict, dataclass
 from pathlib import Path
-from typing import Any, Dict, Union
+from typing import Any, Dict, Optional, Union
 
 from transformers import GPT2Config, PretrainedConfig, TrainingArguments
 
@@ -23,9 +23,13 @@ class TransformersConfig:
     training: TrainingArguments
     output_root_dir: str
     logging_root_dir: str
+    num_meta: Optional[int] = None
+    chord_embedding_path: Optional[str] = None
 
     @classmethod
-    def from_file(cls, json_path: Union[str, Path]) -> TransformersConfig:
+    def from_file(
+        cls, json_path: Union[str, Path], from_pretrained: bool = False
+    ) -> TransformersConfig:
         with open(json_path, "r") as f:
             data = json.load(f)
 
@@ -33,7 +37,7 @@ class TransformersConfig:
         logging_root_dir = Path(data["logging_root_dir"]).expanduser()
         resume_training = data["resume_training"]
 
-        if resume_training:
+        if resume_training or from_pretrained:
             output_dir = output_root_dir
             logging_dir = logging_root_dir
         else:
@@ -46,11 +50,16 @@ class TransformersConfig:
 
         data = expanduser_data(data)
         model_config = GPT2Config(**data.pop("model"))
-        training_config = TrainingArguments(
-            **data.pop("training"),
-            output_dir=str(output_dir),
-            logging_dir=str(logging_dir),
-        )
+
+        training_arguments_dict = data.pop("training")
+        if training_arguments_dict.get("output_dir") is None:
+            training_arguments_dict.update(
+                {"output_dir": str(output_dir), "logging_dir": str(logging_dir)}
+            )
+        valid_training_arguments_dict = {
+            key: value for key, value in training_arguments_dict.items() if not key.startswith("_")
+        }
+        training_config = TrainingArguments(**valid_training_arguments_dict)
         return cls(**data, model=model_config, training=training_config)
 
     def save(self) -> None:
@@ -85,7 +94,7 @@ def expanduser_data(data: Dict[str, Any]) -> Dict[str, Any]:
         if isinstance(value, dict):
             copied_data[key] = expanduser_data(value)
         else:
-            if key.endswith("_dir"):
+            if key.endswith("_dir") and isinstance(value, str):
                 value = expanduser(value)
             copied_data[key] = value
     return copied_data

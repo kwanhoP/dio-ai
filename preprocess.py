@@ -4,8 +4,9 @@ from multiprocessing import cpu_count
 from pathlib import Path
 from typing import Optional
 
+from dioai.logger import logger
 from dioai.preprocessor import ChunkMidiArguments, ParseMidiArguments
-from dioai.preprocessor.pipeline import PreprocessPipeline
+from dioai.preprocessor.pipeline import PREPROCESS_STEPS, PreprocessPipeline
 
 ALLOWED_DATASETS = ("pozalabs", "pozalabs2", "reddit")
 NO_PREPARATION_BEFORE_ENCODING = ("pozalabs",)
@@ -22,6 +23,7 @@ def get_root_parser() -> argparse.ArgumentParser:
         "--num_cores", type=int, help="병렬 처리시 사용할 프로세스 개수", default=max(1, cpu_count() - 4)
     )
     root_parser.add_argument("--augment", action="store_true", help="데이터 어그멘테이션 수행 여부")
+    root_parser.add_argument("--steps", nargs="+", default=PREPROCESS_STEPS, help="전처리 수행할 단계")
     return root_parser
 
 
@@ -60,7 +62,11 @@ def add_reddit_argument_group(root_parser: argparse.ArgumentParser) -> None:
     add_midi_parsing_argument_group(root_parser)
 
 
-add_pozalabs2_argument_group = add_reddit_argument_group
+def add_pozalabs2_argument_group(root_parser: argparse.ArgumentParser) -> None:
+    add_midi_chunking_argument_group(root_parser)
+    add_midi_parsing_argument_group(root_parser)
+    group = root_parser.add_argument_group("포자랩스2 데이터 전처리 관련 인자")
+    group.add_argument("--chord_progression_csv_path", type=str, help="코드 진행이 저장된 CSV 파일 경로")
 
 
 def add_pozalabs_argument_group(root_parser: argparse.ArgumentParser) -> None:
@@ -93,6 +99,8 @@ def main(args: argparse.Namespace) -> None:
     dataset_name = get_dataset_name()
     root_dir = prepare_path(args.root_dir)
     pipeline = PreprocessPipeline(dataset_name)
+    preprocess_steps = args.steps
+    logger.info(f"Data: {dataset_name} | Preprocess Steps: {preprocess_steps}")
 
     if dataset_name in NO_PREPARATION_BEFORE_ENCODING:
         dataset_extra_args = dict(backoffice_api_url=args.backoffice_api_url)
@@ -110,10 +118,15 @@ def main(args: argparse.Namespace) -> None:
                 shift_size=args.shift_size,
                 preserve_channel=dataset_name in PRESERVE_CHORD_TRACK,
             ),
+            chord_progression_csv_path=Path(args.chord_progression_csv_path).expanduser(),
         )
 
     pipeline(
-        root_dir=root_dir, num_cores=args.num_cores, augment=args.augment, **dataset_extra_args
+        root_dir=root_dir,
+        num_cores=args.num_cores,
+        augment=args.augment,
+        preprocess_steps=preprocess_steps,
+        **dataset_extra_args,
     )
 
 

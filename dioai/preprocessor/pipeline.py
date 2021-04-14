@@ -1,14 +1,16 @@
-import inspect
 import time
 from multiprocessing import cpu_count
 from pathlib import Path
-from typing import Any, Dict, Union
+from typing import List, Union
 
 from dioai.logger import logger
 
+from ..utils import dependency
 from .encoder import MetaEncoderFactory, MidiPerformanceEncoder
 from .parser import MetaParserFactory
 from .preprocessor import PreprocessorFactory
+
+PREPROCESS_STEPS = ("chunk", "parse", "encode")
 
 
 class PreprocessPipeline:
@@ -18,6 +20,7 @@ class PreprocessPipeline:
     def __call__(
         self,
         root_dir: Union[str, Path],
+        preprocess_steps: List[str],
         num_cores: int = max(4, cpu_count() - 2),
         augment: bool = False,
         *args,
@@ -34,7 +37,6 @@ class PreprocessPipeline:
             meta_parser=meta_parser,
             meta_encoder=meta_encoder,
             note_sequence_encoder=MidiPerformanceEncoder(),
-            *args,
             **kwargs,
         )
         logger.info(f"[{self.dataset_name}] Initialized preprocessor")
@@ -44,12 +46,8 @@ class PreprocessPipeline:
             root_dir=root_dir,
             num_cores=num_cores,
             augment=augment,
-            **inject_args(preprocessor.preprocess, **kwargs),
+            preprocess_steps=preprocess_steps,
+            **dependency.inject_args(preprocessor.preprocess, **kwargs),
         )
         end_time = time.perf_counter()
         logger.info(f"Finished preprocessing in {end_time - start_time:.3f}s")
-
-
-def inject_args(func, **kwargs) -> Dict[str, Any]:
-    args = [arg for arg in inspect.getfullargspec(func).args]
-    return {key: value for key, value in kwargs.items() if key in args}

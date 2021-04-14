@@ -1,9 +1,12 @@
 import copy
+import pickle
 from pathlib import Path
-from typing import Union
+from typing import Dict, List, Union
 
 import numpy as np
 import tensorflow as tf
+
+from dioai.preprocessor import utils
 
 
 class GPT2MetaToNoteTFDataset:
@@ -99,6 +102,91 @@ class GPT2MetaToNoteTFDataset:
 
     def _filename(self, is_input: bool = True) -> str:
         return f"{self.input_filename if is_input else self.target_filename}_{self.split}.npy"
+
+
+class GPT2ChordMetaToNoteTFDataset(GPT2MetaToNoteTFDataset):
+    output_signature = {
+        "input_ids": tf.TensorSpec(shape=(None,), dtype=tf.int64),
+        "attention_mask": tf.TensorSpec(shape=(None,), dtype=tf.int64),
+        "labels": tf.TensorSpec(shape=(None,), dtype=tf.int64),
+        "chord_progression_vector": tf.TensorSpec(shape=(None,), dtype=tf.float32),
+    }
+
+    def __init__(
+        self,
+        data_dir: Union[str, Path],
+        split: str,
+        chord_embedding_path: Union[str, Path],
+        num_meta: int,
+    ):
+        super().__init__(data_dir=data_dir, split=split)
+        with open(chord_embedding_path, "rb") as f_in:
+            _chord_embedding_table_raw: Dict[List[str], np.ndarray] = pickle.load(f_in)
+        self.chord_embedding_table = {
+            utils.get_chord_progression_md5(chord_progression): vector
+            for chord_progression, vector in _chord_embedding_table_raw.items()
+        }
+        self.num_meta = num_meta
+
+    def build(
+        self,
+        batch_size: int,
+        max_length: int,
+        training: bool = True,
+        shuffle: bool = False,
+        shuffle_buffer_size: int = 10000,
+        pad_id: int = 103,
+    ) -> tf.data.Dataset:
+        dataset = tf.data.Dataset.from_generator(
+            self._get_numpy_generator,
+            output_signature=self.output_signature,
+        )
+        dataset = dataset.filter(lambda x: tf.shape(x["input_ids"])[0] <= max_length)
+        dataset = dataset.padded_batch(
+            batch_size=batch_size,
+            padded_shapes={key: [None] for key in self.output_signature.keys()},
+            padding_values={
+                "input_ids": tf.constant(pad_id, dtype=tf.int64),
+                "attention_mask": tf.constant(0, dtype=tf.int64),
+                "labels": tf.constant(pad_id, dtype=tf.int64),
+                "chord_progression_vector": tf.constant(pad_id, dtype=tf.float32),
+            },
+        )
+        if shuffle:
+            dataset = dataset.shuffle(shuffle_buffer_size)
+        if training:
+            dataset = dataset.repeat()
+            dataset = dataset.shuffle(batch_size)
+        else:
+            dataset = dataset.shuffle(shuffle_buffer_size, seed=1203)
+            dataset = dataset.take(5000)
+            dataset = self._get_dataset_with_fixed_batch_size(dataset, batch_size)
+
+        dataset = dataset.prefetch(2)
+        return dataset
+
+    def _get_numpy_generator(self):
+        for sub_dir in self.data_dir.iterdir():
+            if not sub_dir.name.startswith(self.npy_dir_name_prefix):
+                continue
+
+            input_features = self.load_npy(sub_dir, is_input=True)
+            target_features = self.load_npy(sub_dir, is_input=False)
+            for input_feature, target_feature in zip(input_features, target_features):
+                input_ids, chord_progression_hash = input_feature[:-1], input_feature[-1]
+                input_ids = np.concatenate([input_ids, target_feature])
+                attention_mask = compute_attention_mask(input_ids)
+
+                # 설정값으로 조정할 수 있게 변경
+                chord_progression_vector = self.chord_embedding_table.get(
+                    chord_progression_hash, np.ones(768)
+                )
+                yield {
+                    "input_ids": input_ids,
+                    "attention_mask": attention_mask,
+                    "labels": copy.deepcopy(input_ids),
+                    "chord_progression_vector": chord_progression_vector,
+                }
 
 
 def compute_attention_mask(input_features: np.ndarray) -> np.ndarray:

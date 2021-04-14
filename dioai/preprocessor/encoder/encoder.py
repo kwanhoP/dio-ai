@@ -288,8 +288,23 @@ class MidiPerformanceEncoderWithInstrument(MidiPerformanceEncoder):
             if i == 1:  # EOS
                 continue
             performance.append(self._encoding.decode_event(i - self.num_reserved_ids))
+
+        new_performance = note_seq.Performance(
+            quantized_sequence=None,
+            steps_per_second=self._steps_per_second,
+            num_velocity_bins=self._num_velocity_bins,
+        )
+        note_found = False
+        for event in performance:
+            if not note_found and event.event_type == note_seq.PerformanceEvent.TIME_SHIFT:
+                continue
+
+            if event.event_type != note_seq.PerformanceEvent.TIME_SHIFT:
+                note_found = True
+            new_performance.append(event)
+
         return self.note_sequence_to_midi_file(
-            output_path, midi_info, performance.to_sequence(), origin_name
+            output_path, midi_info, new_performance.to_sequence(), origin_name
         )
 
     @property

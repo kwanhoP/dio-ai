@@ -57,6 +57,7 @@ class RedditMetaParser(BaseMetaParser):
             max_velocity=max_velocity,
             # 코드 트랙은 항상 마지막 트랙
             track_category=utils.get_track_category_from_channel(midi_obj.tracks[1]),
+            chord_progression=constants.UNKNOWN,
         )
         # reddit 데이터셋을 처리할 때 BPM/Key/Time signature 가 모두 기본값이면 UNKNOWN 처리
         if self.default_to_unknown and _is_all_default_meta(midi_meta):
@@ -79,6 +80,7 @@ class PozalabsMetaParser(BaseMetaParser):
                 copied_meta_dict["audio_key"] + copied_meta_dict["chord_type"]
             )
         copied_meta_dict["inst"] = remove_number_from_inst(copied_meta_dict["inst"])
+        copied_meta_dict["chord_progression"] = copied_meta_dict.pop("chord_progressions")[0]
         min_velocity, max_velocity = utils.get_velocity_range(
             midi_path,
             keyswitch_velocity=constants.KeySwitchVelocity.get_value(copied_meta_dict["inst"]),
@@ -93,7 +95,12 @@ class Pozalabs2MetaParser(BaseMetaParser):
         super().__init__()
         self.genre_info = TableReader(meta_csv_path).get_meta_dict()
 
-    def parse(self, midi_path: Union[str, Path]) -> MidiMeta:
+    def parse(
+        self, midi_path: Union[str, Path], chord_progression_info: Dict[str, Dict[str, Any]]
+    ) -> MidiMeta:
+        midi_name = Path(midi_path).stem
+        midi_chord_progression_info = chord_progression_info.get(midi_name)
+
         midi_path = str(midi_path)
         midi_obj = mido.MidiFile(midi_path)
         meta_track = midi_obj.tracks[0]
@@ -117,6 +124,11 @@ class Pozalabs2MetaParser(BaseMetaParser):
             max_velocity=max_velocity,
             # 코드 트랙은 항상 마지막 트랙
             track_category=utils.get_track_category_from_channel(midi_obj.tracks[1]),
+            chord_progression=(
+                midi_chord_progression_info["chord_progression"]
+                if midi_chord_progression_info is not None
+                else constants.UNKNOWN
+            ),
         )
         return midi_meta
 

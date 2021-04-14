@@ -15,10 +15,17 @@ def test_encode_meta_all_unknown(unknown_meta: MidiMeta):
 def test_encode_meta_unknown_encoded(unknown_meta: MidiMeta):
     unknown_meta.num_measures = 4
     encoded_meta = meta.encode_meta(unknown_meta)
-    expected = [
-        meta.Unknown.get(name).value if name != "num_measures" else meta.Offset.MEASURES_4.value
-        for name in meta.META_ENCODING_ORDER
-    ]
+    expected = []
+    for name in meta.META_ENCODING_ORDER:
+        name = meta.META_TO_ENCODER_ALIAS.get(name, name)
+        if name == "num_measures":
+            v = meta.Offset.MEASURES_4.value
+        elif name == "has_chord_progression":
+            v = meta.Offset.HAS_CHORD_PROGRESSION.value + 1
+        else:
+            v = meta.Unknown.get(name).value
+        expected.append(v)
+
     assert encoded_meta == expected
 
 
@@ -39,6 +46,7 @@ class TestPozalabsMetaEncoder:
             min_velocity=12,
             max_velocity=127,
             track_category="main_melody",
+            chord_progression=["C", "C", "C", "C"],
         )
         expected = [
             # 39 + Offset.BPM (423)
@@ -61,6 +69,7 @@ class TestPozalabsMetaEncoder:
             566,
             # 0 + Offset.TRACK_CATEGORY,
             568,
+            574,
         ]
         encoded_meta = self.meta_encoder.encode(midi_meta)
         assert encoded_meta == expected

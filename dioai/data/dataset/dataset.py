@@ -10,8 +10,20 @@ from torch.utils.data import Dataset, IterableDataset
 
 from dioai.config import TransformersConfig
 
-from .gpt2_tf import GPT2MetaToNoteTFDataset
+from .gpt2_tf import GPT2ChordMetaToNoteTFDataset, GPT2MetaToNoteTFDataset
 from .magenta_tfrecord import BatchingSchemeArgs, FeatureType, MagentaTFRecordDataset
+
+
+class EvalDataset(Dataset):
+    def __init__(self, data: List[Dict[str, torch.Tensor]]):
+        super().__init__()
+        self.dataset = data
+
+    def __getitem__(self, item: int) -> Dict[str, torch.Tensor]:
+        return self.dataset[item]
+
+    def __len__(self) -> int:
+        return len(self.dataset)
 
 
 class GPT2BaseDataset(IterableDataset):
@@ -63,17 +75,6 @@ class GPT2BaseDataset(IterableDataset):
             yield item
 
     def to_dataset(self) -> Dataset:
-        class EvalDataset(Dataset):
-            def __init__(self, data: List[Dict[str, torch.Tensor]]):
-                super().__init__()
-                self.dataset = data
-
-            def __getitem__(self, item: int) -> Dict[str, torch.Tensor]:
-                return self.dataset[item]
-
-            def __len__(self) -> int:
-                return len(self.dataset)
-
         return EvalDataset(list(self.prepare_dataset()))
 
     def prepare_dataset(self) -> Iterator:
@@ -142,17 +143,6 @@ class GPT2MetaToNoteDataset(IterableDataset):
             yield item
 
     def to_dataset(self) -> Dataset:
-        class EvalDataset(Dataset):
-            def __init__(self, data: List[Dict[str, torch.Tensor]]):
-                super().__init__()
-                self.dataset = data
-
-            def __getitem__(self, item: int) -> Dict[str, torch.Tensor]:
-                return self.dataset[item]
-
-            def __len__(self) -> int:
-                return len(self.dataset)
-
         return EvalDataset(list(self.prepare_dataset()))
 
     def prepare_dataset(self) -> Iterator:
@@ -161,6 +151,35 @@ class GPT2MetaToNoteDataset(IterableDataset):
 
     def __getitem__(self, item: int):
         ...
+
+
+class GPT2ChordMetaToNoteDataset(GPT2MetaToNoteDataset):
+    name = "gpt2_chord_meta_to_note"
+
+    def __init__(
+        self, config: TransformersConfig, split: str, training: bool = True, shuffle: bool = False
+    ):
+        super().__init__(config=config, split=split, training=training, shuffle=shuffle)
+        self.tf_dataset = GPT2ChordMetaToNoteTFDataset(
+            self.config.data_dir,
+            split=split,
+            chord_embedding_path=self.config.chord_embedding_path,
+            num_meta=self.config.num_meta,
+        )
+        self.tf_dataset_build_args = dict(
+            batch_size=self.config.batch_size,
+            max_length=self.config.model.n_ctx,
+            pad_id=self.config.model.pad_token_id,
+            training=training,
+            shuffle=shuffle,
+        )
+
+    def prepare_dataset(self) -> Iterator:
+        tf_dataset = self.tf_dataset.build(**self.tf_dataset_build_args)
+        for batch in tf_dataset.as_numpy_iterator():
+            # 반드시 1차원 이상이어야 함
+            batch["num_meta"] = np.array([self.config.num_meta], dtype=np.int64)
+            yield batch
 
 
 def meta_to_note_collate_fn(batch: List[Dict[str, np.ndarray]]) -> Dict[str, torch.Tensor]:

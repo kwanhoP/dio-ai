@@ -1,6 +1,7 @@
 import copy
 import enum
 import functools
+import hashlib
 import http
 import inspect
 import math
@@ -57,6 +58,11 @@ from .constants import (
     UNKNOWN,
 )
 from .container import MidiInfo
+
+
+def get_chord_progression_md5(chord_progression: List[str]) -> str:
+    chord_progression_str = ",".join(chord_progression)
+    return hashlib.md5(chord_progression_str.encode()).hexdigest()
 
 
 class Counter:

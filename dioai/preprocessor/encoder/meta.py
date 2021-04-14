@@ -23,6 +23,7 @@ DEFAULT_ENCODING_MAPS = {
     "track_category": constants.TRACK_CATEGORY_MAP,
 }
 ATTR_ALIAS = {"min_velocity": "velocity", "max_velocity": "velocity"}
+META_TO_ENCODER_ALIAS = {"chord_progression": "has_chord_progression"}
 
 
 class AliasMixin:
@@ -56,6 +57,7 @@ class Offset(AliasMixin, int, enum.Enum):
     GENRE = 526
     VELOCITY = 540
     TRACK_CATEGORY = 568
+    HAS_CHORD_PROGRESSION = 574
 
 
 ENCODERS: Dict[str, EncodeFunc] = dict()
@@ -182,6 +184,13 @@ def encode_track_category(track_category: str, encoding_map: Dict[str, int]) -> 
     return encoding_map[track_category]
 
 
+@register_encoder
+def encode_has_chord_progression(chord_progression: Union[str, List[str]]) -> int:
+    if chord_progression == constants.UNKNOWN:
+        return Offset.HAS_CHORD_PROGRESSION.value + 1
+    return Offset.HAS_CHORD_PROGRESSION.value
+
+
 def encode_meta(
     midi_meta: MidiMeta,
     encoding_maps_override: Dict[Any, int] = None,
@@ -194,7 +203,9 @@ def encode_meta(
     result = []
     for meta_name in META_ENCODING_ORDER:
         encoded_meta = inject_args_to_encode_func(
-            ENCODERS[meta_name], getattr(midi_meta, meta_name), encoding_maps.get(meta_name)
+            ENCODERS[META_TO_ENCODER_ALIAS.get(meta_name, meta_name)],
+            getattr(midi_meta, meta_name),
+            encoding_maps.get(meta_name),
         )
         result.append(encoded_meta)
     return result

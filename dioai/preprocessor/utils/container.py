@@ -17,6 +17,7 @@ class MidiInfo:
     min_velocity: int
     max_velocity: int
     track_category: str
+    chord_progression: List[str]
 
     # note
     note_seq: List[int]
@@ -33,3 +34,4 @@ class MidiMeta(BaseModel):
     min_velocity: Union[int, str]
     max_velocity: Union[int, str]
     track_category: str
+    chord_progression: Union[str, List[str]]

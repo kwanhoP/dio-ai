@@ -9,9 +9,11 @@ from typing import Any, Dict, Iterable, List, Optional, Tuple, Type, Union
 
 import mido
 import numpy as np
+import pandas as pd
 import parmap
 
 from ..exceptions import UnprocessableMidiError
+from ..utils import dependency
 from . import utils
 from .chunk_midi import chunk_midi
 from .encoder import BaseMetaEncoder, MidiPerformanceEncoder
@@ -194,6 +196,7 @@ class RedditPreprocessor(BasePreprocessor):
         self,
         root_dir: Union[str, Path],
         num_cores: int,
+        preprocess_steps: List[str],
         chunk_midi_arguments: ChunkMidiArguments,
         parse_midi_arguments: ParseMidiArguments,
         val_split_ratio: float = 0.1,
@@ -212,22 +215,25 @@ class RedditPreprocessor(BasePreprocessor):
                 num_cores=num_cores,
             )
 
-        chunk_midi(
-            midi_dataset_path=sub_dir.raw,
-            chunked_midi_path=sub_dir.chunked,
-            tmp_midi_dir=sub_dir.tmp,
-            num_cores=num_cores,
-            dataset_name=self.name,
-            **asdict(chunk_midi_arguments),
-        )
-        for window_size in parse_midi_arguments.bar_window_size:
-            utils.parse_midi(
-                source_dir=str(sub_dir.chunked),
-                num_measures=window_size,
-                shift_size=parse_midi_arguments.shift_size,
-                output_dir=sub_dir.parsed,
+        if "chunk" in preprocess_steps:
+            chunk_midi(
+                midi_dataset_path=sub_dir.raw,
+                chunked_midi_path=sub_dir.chunked,
+                tmp_midi_dir=sub_dir.tmp,
                 num_cores=num_cores,
+                dataset_name=self.name,
+                **asdict(chunk_midi_arguments),
             )
+
+        if "parse" in preprocess_steps:
+            for window_size in parse_midi_arguments.bar_window_size:
+                utils.parse_midi(
+                    source_dir=str(sub_dir.chunked),
+                    num_measures=window_size,
+                    shift_size=parse_midi_arguments.shift_size,
+                    output_dir=sub_dir.parsed,
+                    num_cores=num_cores,
+                )
         self.export_encoded_midi(
             parsed_midi_dir=sub_dir.parsed,
             encode_tmp_dir=sub_dir.encode_tmp,
@@ -288,8 +294,8 @@ class RedditPreprocessor(BasePreprocessor):
         encoded_note_sequence = np.array(self.encode_note_sequence(midi_path), dtype=object)
         return EncodingOutput(meta=encoded_meta, note_sequence=encoded_note_sequence)
 
-    def _encode_meta(self, midi_meta: MidiMeta) -> np.ndarray:
-        return np.array(self.meta_encoder.encode(midi_meta))
+    def _encode_meta(self, midi_meta: MidiMeta) -> List[int]:
+        return self.meta_encoder.encode(midi_meta)
 
     def _parse_meta(self, midi_path: Union[str, Path]) -> MidiMeta:
         return self.meta_parser.parse(midi_path)
@@ -297,6 +303,53 @@ class RedditPreprocessor(BasePreprocessor):
 
 class Pozalabs2Preprocessor(RedditPreprocessor):
     name = "pozalabs2"
+
+    def __init__(
+        self,
+        meta_parser: BaseMetaParser,
+        meta_encoder: BaseMetaEncoder,
+        note_sequence_encoder: MidiPerformanceEncoder,
+        chord_progression_csv_path: Union[str, Path],
+        *args,
+        **kwargs,
+    ):
+        super().__init__(
+            meta_parser=meta_parser,
+            meta_encoder=meta_encoder,
+            note_sequence_encoder=note_sequence_encoder,
+            *args,
+            **kwargs,
+        )
+        self.chord_progression_info = self._load_chord_progression_info(chord_progression_csv_path)
+
+    def _preprocess_midi(self, midi_path: Union[str, Path]) -> Optional[EncodingOutput]:
+        midi_meta = self.meta_parser.parse(midi_path, self.chord_progression_info)
+        encoded_meta: List[Union[int, str]] = self._encode_meta(midi_meta)
+        # TODO: 여러 코드 진행 처리 고려할 것
+        midi_chord_progression_info = self.chord_progression_info.get(Path(midi_path).stem)
+        chord_progression_md5 = (
+            midi_chord_progression_info["chord_progression_hash"]
+            if midi_chord_progression_info is not None
+            else constants.UNKNOWN
+        )
+        encoded_meta.append(chord_progression_md5)
+        encoded_meta: np.ndarray = np.array(encoded_meta, dtype=object)
+        encoded_note_sequence = np.array(self.encode_note_sequence(midi_path), dtype=object)
+        return EncodingOutput(meta=encoded_meta, note_sequence=encoded_note_sequence)
+
+    @staticmethod
+    def _load_chord_progression_info(
+        chord_progression_csv_path: Union[str, Path]
+    ) -> Dict[str, Dict[str, Any]]:
+        df = pd.read_csv(chord_progression_csv_path)
+        records = df.to_dict(orient="records")
+        return {
+            record["filename"]: {
+                "chord_progression": record["chord_progression"].split(","),
+                "chord_progression_hash": record["chord_progression_hash"],
+            }
+            for record in records
+        }
 
 
 class PozalabsPreprocessor(BasePreprocessor):
@@ -430,6 +483,9 @@ class PozalabsPreprocessor(BasePreprocessor):
             if copied_sample_info["track_category"] in constants.NON_KEY_TRACK_CATEGORIES:
                 continue
 
+            if not copied_sample_info["chord_progressions"]:
+                continue
+
             midi_path = sample_id_to_path.get(copied_sample_info["id"])
             # 백오피스에는 등록되었으나 아직 다운로드 되지 않은 샘플은 건너뜀
             if midi_path is None:
@@ -443,9 +499,19 @@ class PozalabsPreprocessor(BasePreprocessor):
             np.save(output_dir.joinpath(f"input_{sample_info_idx}"), encoding_output.meta)
             np.save(output_dir.joinpath(f"target_{sample_info_idx}"), encoding_output.note_sequence)
 
-    def _preprocess_midi(self, sample_info: Dict[str, Any], midi_path: Union[str, Path]):
+    def _preprocess_midi(
+        self, sample_info: Dict[str, Any], midi_path: Union[str, Path]
+    ) -> EncodingOutput:
         midi_meta = self.meta_parser.parse(meta_dict=sample_info, midi_path=midi_path)
-        encoded_meta = np.array(self.meta_encoder.encode(midi_meta), dtype=object)
+        encoded_meta: List[Union[int, str]] = self.meta_encoder.encode(midi_meta)
+        # TODO: 여러 코드 진행 처리 고려할 것
+        chord_progression_md5 = (
+            utils.get_chord_progression_md5(midi_meta.chord_progression)
+            if midi_meta.chord_progression != constants.UNKNOWN
+            else constants.UNKNOWN
+        )
+        encoded_meta.append(chord_progression_md5)
+        encoded_meta: np.ndarray = np.array(encoded_meta, dtype=object)
         encoded_note_sequence = np.array(self.encode_note_sequence(midi_path), dtype=object)
         return EncodingOutput(meta=encoded_meta, note_sequence=encoded_note_sequence)
 
@@ -474,8 +540,9 @@ PREPROCESSORS: Dict[str, Type[BasePreprocessor]] = {
 class PreprocessorFactory:
     registered_preprocessors = tuple(PREPROCESSORS.keys())
 
-    def create(self, name: str, *args, **kwargs) -> BasePreprocessor:
+    def create(self, name: str, **kwargs) -> BasePreprocessor:
         if name not in self.registered_preprocessors:
             raise ValueError(f"`name` should be one of {self.registered_preprocessors}")
 
-        return PREPROCESSORS[name](*args, **kwargs)
+        preprocessor_cls = PREPROCESSORS[name]
+        return preprocessor_cls(**dependency.inject_args(preprocessor_cls.__init__, **kwargs))

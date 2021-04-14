@@ -1,16 +1,26 @@
 import argparse
 import datetime
+import http
 import json
-import pprint
+import pickle
+import random
 from pathlib import Path
-from typing import Any, Dict, List, Union
+from typing import Any, Dict, List, Tuple, Union
 
+import numpy as np
+import requests
 import torch
 
+from dioai.config import TransformersConfig
 from dioai.logger import logger
-from dioai.model.model import GP2MetaToNoteModel
+from dioai.model import PozalabsModelFactory
 from dioai.preprocessor.encoder import BaseMetaEncoder, MetaEncoderFactory, decode_midi
-from dioai.preprocessor.encoder.meta import ATTR_ALIAS, META_ENCODING_ORDER, Offset
+from dioai.preprocessor.encoder.meta import (
+    ATTR_ALIAS,
+    META_ENCODING_ORDER,
+    META_TO_ENCODER_ALIAS,
+    Offset,
+)
 from dioai.preprocessor.utils import constants
 from dioai.preprocessor.utils.container import MidiInfo, MidiMeta
 
@@ -42,7 +52,21 @@ def get_parser() -> argparse.ArgumentParser:
     parser.add_argument("--num_generate", type=int, help="생성 개수")
     parser.add_argument("--top_k", type=int, default=50)
     parser.add_argument("--top_p", type=float, default=0.95)
+    parser.add_argument(
+        "--sample_id",
+        type=str,
+        help="생성에 사용할 코드 진행을 가져올 샘플 ID. 지정하지 않으면 학습에 사용된 코드 임베딩에서 무작위로 코드 진행을 선택합니다.",
+    )
     return parser
+
+
+def fetch_sample(sample_id) -> [Dict[str, Any]]:
+    request_url = f"https://backoffice.pozalabs.com/api/samples/{sample_id}"
+    response = requests.get(request_url)
+    if response.status_code == http.HTTPStatus.OK:
+        return response.json()["sample"]
+
+    raise ValueError(f"Failed to fetch sample from backoffice. Status code: {response.status_code}")
 
 
 def load_gen_config(checkpoint_dir: Union[str, Path]) -> Dict[str, Any]:
@@ -61,6 +85,7 @@ def sub_offset(encoded_meta: torch.Tensor) -> Dict[str, int]:
             continue
 
         meta_name_alias = ATTR_ALIAS.get(meta_name, meta_name)
+        meta_name_alias = META_TO_ENCODER_ALIAS.get(meta_name_alias, meta_name_alias)
         offset = getattr(Offset, meta_name_alias.upper())
         adjusted_value = value - offset
         result[meta_name] = adjusted_value
@@ -84,6 +109,8 @@ def generate_note_sequence(
     top_p: float,
     pad_token_id: int,
     eos_token_id: int,
+    num_meta: int,
+    chord_progression_vector: torch.Tensor,
 ):
     result = []
     for _ in range(num_generate):
@@ -96,6 +123,8 @@ def generate_note_sequence(
             top_p=top_p,
             pad_token_id=pad_token_id,
             eos_token_id=eos_token_id,
+            num_meta=torch.tensor([num_meta], dtype=torch.int64),
+            chord_progression_vector=chord_progression_vector,
         )
         result.extend(output)
     return result
@@ -114,20 +143,45 @@ def decode_note_sequence(
         )
 
 
+def load_chord_embedding(embedding_path: Union[str, Path]) -> Dict[Tuple, np.ndarray]:
+    with open(embedding_path, "rb") as f_in:
+        return pickle.load(f_in)
+
+
 def main(args: argparse.Namespace) -> None:
-    checkpoint_dir = Path(known_args.checkpoint_dir).expanduser()
-    output_dir = Path(known_args.output_dir).expanduser()
+    output_dir = Path(args.output_dir).expanduser()
+    checkpoint_dir = Path(args.checkpoint_dir).expanduser()
+    root_config_path = checkpoint_dir.parent.joinpath("root_config.json")
+    config = TransformersConfig.from_file(root_config_path, from_pretrained=True)
+
+    chord_embedding = None
+    chord_progression = constants.UNKNOWN
+    if config.chord_embedding_path is not None:
+        chord_embedding = load_chord_embedding(config.chord_embedding_path)
+        logger.info("`chord_embedding_path` is given. Chord progression will randomly selected")
+        chord_progression = random.choice(list(chord_embedding.keys()))
+
+    sample_id = args.sample_id
+    if sample_id is not None:
+        logger.info(f"Using chord progression from {sample_id}")
+        try:
+            sample = fetch_sample(sample_id)
+            chord_progression = sample["chord_progressions"][0]
+        except ValueError as exc:
+            logger.info(str(exc))
+            if config.chord_embedding_path is not None:
+                logger.info("Chord progression will randomly selected")
+                chord_progression = random.choice(list(chord_embedding.keys()))
+
+    logger.info(f"Final chord progression: {chord_progression}")
 
     is_pozalabs_inst = args.inst in constants.POZA_INST_MAP
     dataset_name = "pozalabs" if is_pozalabs_inst else "reddit"
     logger.info(f"Using Encoder for {dataset_name}")
 
     meta_encoder_factory = MetaEncoderFactory()
-    midi_meta = parse_meta(**vars(args))
-    logger.info(
-        f"Generating {args.num_generate} samples using following meta:\n"
-        f"{pprint.pformat(midi_meta.dict())}"
-    )
+    midi_meta = parse_meta(**vars(args), chord_progression=chord_progression)
+    logger.info(f"Generating {args.num_generate} samples using following meta:\n{midi_meta.dict()}")
 
     encoded_meta = encode_meta(
         meta_encoder=meta_encoder_factory.create(dataset_name), midi_meta=midi_meta
@@ -135,17 +189,21 @@ def main(args: argparse.Namespace) -> None:
     logger.info("Encoded meta")
 
     logger.info("Start generation")
-    gen_config = load_gen_config(checkpoint_dir)
+    model_factory = PozalabsModelFactory()
     generation_result = generate_note_sequence(
-        model=GP2MetaToNoteModel.from_pretrained(checkpoint_dir),
+        model=model_factory.create(name=config.model_name, checkpoint_dir=checkpoint_dir),
         # 입력값은 [batch_size, sequence_length]
         input_meta=torch.unsqueeze(torch.LongTensor(encoded_meta), dim=0),
         num_generate=args.num_generate,
         top_k=args.top_k,
         top_p=args.top_p,
-        max_length=gen_config["n_ctx"],
-        pad_token_id=gen_config["pad_token_id"],
-        eos_token_id=gen_config["eos_token_id"],
+        max_length=config.model.n_ctx,
+        pad_token_id=config.model.pad_token_id,
+        eos_token_id=config.model.eos_token_id,
+        num_meta=len(encoded_meta),
+        chord_progression_vector=torch.tensor(
+            chord_embedding[tuple(chord_progression)], dtype=torch.float32
+        ),
     )
     logger.info("Finished generation")
 
