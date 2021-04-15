@@ -1,5 +1,6 @@
 import copy
 import pickle
+import random
 from pathlib import Path
 from typing import Dict, List, Union
 
@@ -166,12 +167,21 @@ class GPT2ChordMetaToNoteTFDataset(GPT2MetaToNoteTFDataset):
         return dataset
 
     def _get_numpy_generator(self):
-        for sub_dir in self.data_dir.iterdir():
-            if not sub_dir.name.startswith(self.npy_dir_name_prefix):
-                continue
+        dataset_paths = list(self.data_dir.rglob("**/*"))
 
-            input_features = self.load_npy(sub_dir, is_input=True)
-            target_features = self.load_npy(sub_dir, is_input=False)
+        input_train_files = gather_files(
+            dataset_paths, prefix=f"{self.input_filename}_{self.split}"
+        )
+        target_train_files = gather_files(
+            dataset_paths, prefix=f"{self.target_filename}_{self.split}"
+        )
+
+        dataset_files_pair = list(zip(input_train_files, target_train_files))
+        random.shuffle(dataset_files_pair)
+
+        for (input_train_path, target_train_path) in dataset_files_pair:
+            input_features = np.load(input_train_path, allow_pickle=True)
+            target_features = np.load(target_train_path, allow_pickle=True)
             for input_feature, target_feature in zip(input_features, target_features):
                 input_ids, chord_progression_hash = input_feature[:-1], input_feature[-1]
                 input_ids = np.concatenate([input_ids, target_feature])
@@ -192,3 +202,11 @@ class GPT2ChordMetaToNoteTFDataset(GPT2MetaToNoteTFDataset):
 def compute_attention_mask(input_features: np.ndarray) -> np.ndarray:
     """attention mask 계산. 입력값은 메타 정보로 패딩이 없습니다."""
     return np.ones_like(input_features)
+
+
+def gather_files(paths: List[Union[str, Path]], prefix: str) -> List[Union[str, Path]]:
+    def _is_target_file(_p):
+        _filename = Path(_p).name
+        return _filename.startswith(prefix)
+
+    return sorted(str(p) for p in paths if _is_target_file(p))

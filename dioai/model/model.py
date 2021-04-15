@@ -163,10 +163,12 @@ class GPT2ChordMetaToNoteModel(GPT2BaseModel):
     ):
         return_dict = return_dict if return_dict is not None else self.config.use_return_dict
 
+        # 평가 시에는 `num_meta`의 형태 또한 (B, 1)이므로 첫번재 요소만 사용
+        num_meta = num_meta[0].item()
         inputs_embeds = self.transformer.wte(input_ids)
         # 코드 진행 임베딩 반영
         # chord_progression_vector: 1 or embedding vector
-        chord_progression_idx = num_meta[0].item() - 1
+        chord_progression_idx = num_meta - 1
 
         # 생성 시에는 토큰이 하나씩 생성되기 때문에, 코드 벡터를 적용할 수 없음
         # 최초 입력값 인코딩 시에만 사용
