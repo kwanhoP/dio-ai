@@ -118,8 +118,11 @@ def main(args: argparse.Namespace) -> None:
                 shift_size=args.shift_size,
                 preserve_channel=dataset_name in PRESERVE_CHORD_TRACK,
             ),
-            chord_progression_csv_path=Path(args.chord_progression_csv_path).expanduser(),
         )
+        if dataset_name in PRESERVE_CHORD_TRACK:
+            dataset_extra_args["chord_progression_csv_path"] = Path(
+                args.chord_progression_csv_path
+            ).expanduser()
 
     pipeline(
         root_dir=root_dir,

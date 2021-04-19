@@ -250,29 +250,34 @@ class RedditPreprocessor(BasePreprocessor):
     def export_encoded_midi(
         self, parsed_midi_dir: Union[str, Path], encode_tmp_dir: Union[str, Path], num_cores: int
     ) -> None:
-        midi_filenames = [
-            str(filename)
-            for filename in parsed_midi_dir.rglob("**/*")
-            if filename.suffix in MIDI_EXTENSIONS
-        ]
-        _midi_filenames_chunk = np.array_split(np.array(midi_filenames), num_cores)
-        # 프로세스별로 별도 idx 할당
-        # TODO: `Manager().Lock`, `Manager().Value`를 사용하도록 수정할 것
-        midi_filenames_chunk = [
-            (idx, arr.tolist()) for idx, arr in enumerate(_midi_filenames_chunk)
-        ]
-        parmap.map(
-            self._preprocess_midi_chunk,
-            midi_filenames_chunk,
-            encode_tmp_dir,
-            pm_pbar=True,
-            pm_processes=num_cores,
-        )
+        for dir_idx, sub_pth in enumerate(parsed_midi_dir.iterdir()):
+            if dir_idx < 1000:
+                continue
+            midi_filenames = [
+                str(filename)
+                for filename in sub_pth.rglob("**/*")
+                if filename.suffix in MIDI_EXTENSIONS
+            ]
+            _midi_filenames_chunk = np.array_split(np.array(midi_filenames), num_cores)
+            # 프로세스별로 별도 idx 할당
+            # TODO: `Manager().Lock`, `Manager().Value`를 사용하도록 수정할 것
+            midi_filenames_chunk = [
+                (idx, arr.tolist()) for idx, arr in enumerate(_midi_filenames_chunk)
+            ]
+            parmap.map(
+                self._preprocess_midi_chunk,
+                midi_filenames_chunk,
+                encode_tmp_dir,
+                dir_idx,
+                pm_pbar=True,
+                pm_processes=num_cores,
+            )
 
     def _preprocess_midi_chunk(
         self,
         idx_midi_paths_chunk: Tuple[int, Iterable[Union[str, Path]]],
         encode_tmp_dir: Union[str, Path],
+        dir_idx: int,
     ) -> None:
         idx, midi_paths_chunk = idx_midi_paths_chunk
         encode_tmp_dir = Path(encode_tmp_dir)
@@ -282,11 +287,16 @@ class RedditPreprocessor(BasePreprocessor):
                 output_dir = encode_tmp_dir.joinpath(f"{idx:04d}")
                 output_dir.mkdir(exist_ok=True, parents=True)
 
-                np.save(output_dir.joinpath(f"input_{midi_path_idx}"), encoding_output.meta)
                 np.save(
-                    output_dir.joinpath(f"target_{midi_path_idx}"), encoding_output.note_sequence
+                    output_dir.joinpath(f"input_{dir_idx}_{midi_path_idx}"), encoding_output.meta
                 )
+                np.save(
+                    output_dir.joinpath(f"target_{dir_idx}_{midi_path_idx}"),
+                    encoding_output.note_sequence,
+                )
+                Path(midi_path).unlink()
             except UnprocessableMidiError:
+                Path(midi_path).unlink()
                 continue
 
     def _preprocess_midi(self, midi_path: Union[str, Path]):

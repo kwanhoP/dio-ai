@@ -130,7 +130,10 @@ def encode_audio_key(audio_key: str, encoding_map: Dict[str, int]) -> int:
 @add_offset
 @encode_unknown()
 def encode_time_signature(time_signature: str, encoding_map: Dict[str, int]) -> int:
-    return encoding_map[time_signature]
+    try:
+        return encoding_map[time_signature]
+    except KeyError:
+        raise UnprocessableMidiError(f"ts keyerror: {time_signature}")
 
 
 @register_encoder

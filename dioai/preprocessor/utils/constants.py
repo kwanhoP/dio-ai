@@ -36,7 +36,7 @@ PITCH_RANGE_CUT = {
     "mid": 72,
     "mid_high": 84,
     "high": 96,
-    "very_high": 108,
+    "very_high": 128,
 }
 DEFAULT_PITCH_RANGE = "mid"
 CHORD_TYPE_IDX = -1
@@ -126,7 +126,7 @@ SIG_TIME_MAP = {
     12: "7/8",
     13: "9/8",
     14: "12/8",
-    15: "2/2",
+    15: "1/4",
     16: "15/8",
 }
 
