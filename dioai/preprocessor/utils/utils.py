@@ -8,11 +8,14 @@ import math
 import os
 import re
 import tempfile
+from fractions import Fraction
 from multiprocessing import Lock, Pool, Value
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple, Union
 
 import mido
+import music21
+import music21.midi.translate
 import numpy as np
 import parmap
 import pretty_midi
@@ -21,6 +24,7 @@ import tqdm
 from sklearn.model_selection import train_test_split
 
 from dioai.exceptions import UnprocessableMidiError
+from dioai.preprocessor.utils.exceptions import InvalidMidiError, InvalidMidiErrorMessage
 
 from . import constants
 from .constants import (
@@ -877,3 +881,152 @@ def augment_data(
         pm_pbar=True,
         pm_processes=num_cores,
     )
+
+
+def find_chord_name(notes: List[music21.note.Note]) -> str:
+    midi_notes = [note.pitch.midi for note in notes]
+    notes_in_degree = get_notes_in_degree(midi_notes)
+    chord_name = find_chord_name_for_notes_in_degree(notes_in_degree)
+
+    if chord_name is None:
+        raise InvalidMidiError(InvalidMidiErrorMessage.invalid_chord.format(midi_notes))
+
+    root_pitch_class = notes[0].pitch.pitchClass
+    root_name = constants.VAL_NOTE_DICT[root_pitch_class][0]
+    return root_name + chord_name
+
+
+def get_notes_in_degree(midi_notes: List[int]) -> List[int]:
+    """미디 노트 (0~127)에서 베이스 노트 대비 떨어져 있는 정도를 계산하는 함수"""
+    result = []
+    for note in midi_notes:
+        note_in_degree = (note - midi_notes[0]) % constants.DEGREE
+        if note_in_degree not in result:
+            result.append(note_in_degree)
+    return result
+
+
+def find_chord_name_for_notes_in_degree(notes_in_degree: List[int]) -> Optional[str]:
+    for name, chord_notes in constants.CHORD_NOTE.items():
+        if chord_notes == notes_in_degree:
+            return name
+
+
+def divide_chord_into_unit_beat(
+    chord: str, quarter_length: float, unit_beat: float = constants.EIGHTH_NOTE_BEATS
+) -> List[str]:
+    if not check_divisible_by_unit_beat(quarter_length, unit_beat):
+        raise InvalidMidiError(InvalidMidiErrorMessage.invalid_chord_note_length.value)
+
+    num_units = int(quarter_length / unit_beat)
+    return [chord] * num_units
+
+
+def check_divisible_by_unit_beat(
+    quarter_length: Union[Fraction, float], unit_beat: float = constants.EIGHTH_NOTE_BEATS
+) -> bool:
+    """노트의 quarter length 가 단위 음표 (기본: 8분 음표)로 나뉘는지 확인하는 함수 (quarter_length:
+    quarter length 관련 문서: https://web.mit.edu/music21/doc/moduleReference/moduleBase.html#music21.base.Music21Object.quarterLength  # noqa: E501
+    """
+    return float(quarter_length / unit_beat).is_integer()
+
+
+def find_chord_name_for_midi(added_notes: List[int]) -> str:
+    """미디 노트에 맞는 코드 이름을 찾는 함수"""
+
+    def _change_chord_name_form(_chord_name: str) -> str:
+        return "".join(constants.CHORD_NAME_FORM.get(char, char) for char in _chord_name)
+
+    notes_in_degree = []
+    for note in added_notes:
+        note_in_degree = (note - added_notes[0]) % constants.DEGREE
+        if note_in_degree not in notes_in_degree:
+            notes_in_degree.append(note_in_degree)
+
+    result = None
+    for name, chord_notes in constants.CHORD_NOTE.items():
+        if chord_notes == notes_in_degree:
+            result = name
+
+    if result is None:
+        raise InvalidMidiError(InvalidMidiErrorMessage.invalid_chord.format(notes_in_degree))
+
+    result = constants.VAL_NOTE_DICT.get(added_notes[0] % 12)[0] + result
+    return _change_chord_name_form(result)
+
+
+def get_num_measures_from_midi_v2(
+    midi_path: Union[str, Path], track_name: Optional[str] = None
+) -> int:
+    """미디에서 마디 수를 계산하는 함수"""
+
+    def _get_track(tracks):
+        if track_name is None:
+            return tracks[0]
+        for t in tracks:
+            if t.name == track_name:
+                return t
+
+    pt_midi = pretty_midi.PrettyMIDI(str(midi_path))
+    time_signature: pretty_midi.TimeSignature = pt_midi.time_signature_changes[-1]
+    coordination = time_signature.numerator / time_signature.denominator
+    ticks_per_measure = pt_midi.resolution * DEFAULT_NUM_BEATS * coordination
+
+    track = _get_track(pt_midi.instruments)
+    if track is None:
+        raise InvalidMidiError(InvalidMidiErrorMessage.chord_track_not_found.value)
+
+    notes = track.notes
+    duration_tick = pt_midi.time_to_tick(notes[-1].end - notes[0].start)
+    return math.ceil(duration_tick / ticks_per_measure)
+
+
+def get_chord_streams(file_path: Union[str, Path]) -> List[music21.stream.Stream]:
+    """미디 파일에서 코드 트랙을 추출한 뒤 music21.stream.Stream 타입으로 변환하는 함수.
+    노트 등장 전의 쉼표는 무시하고 실제 코드가 시작한 부분부터 슬라이싱 후 리턴
+    """
+
+    def _get_chord_stream(_music21_midi_track: music21.midi.MidiTrack) -> music21.stream.Stream:
+        return music21.midi.translate.midiTrackToStream(
+            mt=_music21_midi_track, ticksPerQuarter=music21_midi.ticksPerQuarterNote
+        )
+
+    def _remove_rest_before_region_start(_stream: music21.stream.Stream) -> music21.stream.Stream:
+        start_idx = 0
+        for idx, event in enumerate(_stream):
+            if not isinstance(event, music21.note.Rest):
+                start_idx = idx
+                break
+        return _stream[start_idx:]
+
+    music21_midi = read_midi_music21(file_path)
+    return [
+        _remove_rest_before_region_start(_get_chord_stream(track))
+        for track in get_chord_tracks(music21_midi)
+    ]
+
+
+def read_midi_music21(file_path: Union[str, Path]) -> music21.midi.MidiFile:
+    mf = music21.midi.MidiFile()
+    mf.open(file_path)
+    mf.read()
+    mf.close()
+    return mf
+
+
+def get_chord_tracks(music21_midi: music21.midi.MidiFile) -> List[music21.midi.MidiTrack]:
+    if music21_midi.file is None:
+        raise ValueError("Midi file is not read. Read midi file first")
+
+    result = []
+    for track in music21_midi.tracks:
+        for event in track.events:
+            if (
+                event.type == music21.midi.MetaEvents.SEQUENCE_TRACK_NAME
+                and event.data.decode("utf-8") == CHORD_TRACK_NAME
+            ):
+                result.append(track)
+
+    if not result:
+        raise InvalidMidiError(InvalidMidiErrorMessage.chord_track_not_found.value)
+    return result
