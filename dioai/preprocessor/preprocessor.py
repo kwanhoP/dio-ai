@@ -300,7 +300,9 @@ class RedditPreprocessor(BasePreprocessor):
                 continue
 
     def _preprocess_midi(self, midi_path: Union[str, Path]):
-        encoded_meta = np.array(self._encode_meta(self._parse_meta(midi_path)), dtype=object)
+        encoded_meta: List[Union[int, str]] = self._encode_meta(self._parse_meta(midi_path))
+        encoded_meta.append(constants.UNKNOWN)
+        encoded_meta: np.ndarray = np.array(encoded_meta, dtype=object)
         encoded_note_sequence = np.array(self.encode_note_sequence(midi_path), dtype=object)
         return EncodingOutput(meta=encoded_meta, note_sequence=encoded_note_sequence)
 
