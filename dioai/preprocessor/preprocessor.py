@@ -1,6 +1,7 @@
 import abc
 import copy
 import enum
+import gc
 import inspect
 import tempfile
 from dataclasses import asdict, dataclass, field
@@ -239,20 +240,29 @@ class RedditPreprocessor(BasePreprocessor):
             encode_tmp_dir=sub_dir.encode_tmp,
             num_cores=num_cores,
         )
-        splits = utils.split_train_val_test(
-            *self.concat_npy(sub_dir.encode_tmp),
-            val_ratio=val_split_ratio,
-            test_ratio=test_split_ratio,
-        )
-        for split_name, data_split in splits.items():
-            np.save(str(sub_dir.encode_npy.joinpath(split_name)), data_split)
+        for npy_idx, sub_npy in enumerate(sub_dir.encode_tmp.iterdir()):
+            inputs, targets = self.concat_npy(sub_npy)
+            inputs = np.array([element for array in inputs for element in array])
+            targets = np.array([element for array in targets for element in array])
+
+            splits = utils.split_train_val_test(
+                inputs,
+                targets,
+                val_ratio=val_split_ratio,
+                test_ratio=test_split_ratio,
+            )
+            output_dir = sub_dir.encode_npy.joinpath(f"{npy_idx:04d}")
+            output_dir.mkdir(exist_ok=True, parents=True)
+            for split_name, data_split in splits.items():
+                np.save(str(output_dir.joinpath(split_name)), data_split)
+
+            del inputs, targets, splits
+            gc.collect()
 
     def export_encoded_midi(
         self, parsed_midi_dir: Union[str, Path], encode_tmp_dir: Union[str, Path], num_cores: int
     ) -> None:
         for dir_idx, sub_pth in enumerate(parsed_midi_dir.iterdir()):
-            if dir_idx < 1000:
-                continue
             midi_filenames = [
                 str(filename)
                 for filename in sub_pth.rglob("**/*")
@@ -281,23 +291,27 @@ class RedditPreprocessor(BasePreprocessor):
     ) -> None:
         idx, midi_paths_chunk = idx_midi_paths_chunk
         encode_tmp_dir = Path(encode_tmp_dir)
-        for midi_path_idx, midi_path in enumerate(midi_paths_chunk):
+        res_note = []
+        res_meta = []
+        for _, midi_path in enumerate(midi_paths_chunk):
             try:
                 encoding_output = self._preprocess_midi(midi_path)
-                output_dir = encode_tmp_dir.joinpath(f"{idx:04d}")
-                output_dir.mkdir(exist_ok=True, parents=True)
-
-                np.save(
-                    output_dir.joinpath(f"input_{dir_idx}_{midi_path_idx}"), encoding_output.meta
-                )
-                np.save(
-                    output_dir.joinpath(f"target_{dir_idx}_{midi_path_idx}"),
-                    encoding_output.note_sequence,
-                )
-                Path(midi_path).unlink()
+                res_meta.append(encoding_output.meta)
+                res_note.append(encoding_output.note_sequence)
             except UnprocessableMidiError:
-                Path(midi_path).unlink()
                 continue
+
+        if res_note:
+            output_dir = encode_tmp_dir.joinpath(f"{idx:04d}")
+            output_dir.mkdir(exist_ok=True, parents=True)
+            np.save(
+                output_dir.joinpath(f"input_{dir_idx}"),
+                np.array(res_meta),
+            )
+            np.save(
+                output_dir.joinpath(f"target_{dir_idx}"),
+                np.array(res_note),
+            )
 
     def _preprocess_midi(self, midi_path: Union[str, Path]):
         encoded_meta: List[Union[int, str]] = self._encode_meta(self._parse_meta(midi_path))
