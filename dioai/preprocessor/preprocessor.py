@@ -403,6 +403,7 @@ class PozalabsPreprocessor(BasePreprocessor):
         self,
         root_dir: Union[str, Path],
         num_cores: int,
+        preprocess_steps: List[str] = None,
         val_split_ratio: int = 0.1,
         test_split_ratio: int = 0.1,
         augment: bool = False,
@@ -416,11 +417,6 @@ class PozalabsPreprocessor(BasePreprocessor):
             self.backoffice_api_url + "/api/samples", per_page=2000
         )
 
-        # 인터프리터가 if/else 모두 앞에 * (asterisk)가 붙어있는 것으로 해석하기 때문에 모든 인자에 튜플 사용
-        sample_id_to_path = self._gather_sample_files(
-            *(sub_dir.raw, sub_dir.augmented) if augment else (sub_dir.raw,)
-        )
-
         if augment:
             self.augment_data(
                 source_dir=sub_dir.raw,
@@ -428,6 +424,11 @@ class PozalabsPreprocessor(BasePreprocessor):
                 augmented_tmp_dir=sub_dir.augmented_tmp,
                 num_cores=num_cores,
             )
+
+        # 인터프리터가 if/else 모두 앞에 * (asterisk)가 붙어있는 것으로 해석하기 때문에 모든 인자에 튜플 사용
+        sample_id_to_path = self._gather_sample_files(
+            *(sub_dir.raw, sub_dir.augmented) if augment else (sub_dir.raw,)
+        )
 
         self.export_encoded_midi(
             fetched_samples=fetched_samples,

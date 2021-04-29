@@ -1,16 +1,18 @@
 import argparse
-import csv
 from multiprocessing import Pool, cpu_count
 from pathlib import Path
 from typing import Dict, List, Optional, Tuple, Union
 
 import mido
 import numpy as np
+import pandas as pd
 import tqdm
 
-from dioai.preprocessor.utils import constants
+from dioai.preprocessor.utils import constants, utils
 from dioai.preprocessor.utils.chord import ChordParser
 from dioai.preprocessor.utils.exceptions import InvalidMidiError
+
+CHORD_INFO_COLS = ("filename", "chord_progression", "chord_progression_hash")
 
 
 def get_parser() -> argparse.ArgumentParser:
@@ -29,22 +31,22 @@ def get_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--chunk_size",
         type=int,
-        required=False,
         default=200,
         help="병렬 처리시 한 프로세스당 처리할 미디 파일의 개수",
     )
     return parser
 
 
-def get_chord_progression(midi_path: Union[str, Path]) -> Tuple[str, Optional[List[str]]]:
+def get_chord_progression(midi_path: Union[str, Path]) -> Tuple[str, Optional[List[str]], Optional[str]]:
     filename = str(Path(midi_path).stem)
     mido_obj = mido.MidiFile(midi_path)
     try:
-        chord_parser = ChordParser(midi=mido_obj)
-        chord_progression = chord_parser.parse()
-        return filename, chord_progression.chord_progressions[0]
+        chord_parser = ChordParser(midi=mido_obj).parse()
+        chord_progression = chord_parser.chord_progressions[0]
+        chord_progression_hash = utils.get_chord_progression_md5(chord_progression)
+        return filename, chord_progression, chord_progression_hash
     except InvalidMidiError:
-        return filename, None
+        return filename, None, None
 
 
 def save_as_npy_file(_chord_progression_list: List[List[str]], npy_path: Union[str, Path]) -> None:
@@ -52,17 +54,9 @@ def save_as_npy_file(_chord_progression_list: List[List[str]], npy_path: Union[s
     np.save(npy_path, chord_progression_array)
 
 
-def save_as_csv_file(_filename_to_chord_dict: Dict[str, str], csv_path: Union[str, Path]) -> None:
-    first_col = "filename"
-    second_col = "chord_progression"
-
-    with open(csv_path, "w", newline="") as csvfile:
-        fieldnames = [first_col, second_col]
-        writer = csv.DictWriter(csvfile, fieldnames=fieldnames, delimiter=",")
-        writer.writeheader()
-
-        for _filename, _chord_progression in _filename_to_chord_dict.items():
-            writer.writerow({first_col: _filename, second_col: _chord_progression})
+def save_as_csv_file(_filename_to_chord_dict: Dict[str, List[str]], csv_path: Union[str, Path]) -> None:
+    df = pd.DataFrame(_filename_to_chord_dict, columns=CHORD_INFO_COLS)
+    df.to_csv(csv_path, index=False)
 
 
 def main(args: argparse.Namespace) -> None:
@@ -77,15 +71,19 @@ def main(args: argparse.Namespace) -> None:
     ]
 
     chord_progression_list = []
-    filename_to_chord_dict = {}
+    filename_to_chord_dict = {col: [] for col in CHORD_INFO_COLS}
     with Pool(num_cores) as pool:
         with tqdm.tqdm(total=len(midi_paths), desc="Extracting chords") as pbar:
-            for filename, chord_progression in pool.imap_unordered(
+            for filename, chord_progression, chord_progression_hash in pool.imap_unordered(
                 get_chord_progression, midi_paths, chunksize=chunk_size
             ):
                 if chord_progression:
                     chord_progression_list.append(chord_progression)
-                    filename_to_chord_dict[filename] = ",".join(chord_progression)
+
+                    chord_progression = ",".join(chord_progression)
+                    chord_infos = (filename, chord_progression, chord_progression_hash)
+                    for col, chord_info in zip(CHORD_INFO_COLS, chord_infos):
+                        filename_to_chord_dict[col].append(chord_info)
                 pbar.update()
 
     npy_path = source_path.parent.joinpath("chord_progression.npy")
