@@ -23,8 +23,10 @@ class TransformersConfig:
     training: TrainingArguments
     output_root_dir: str
     logging_root_dir: str
+    num_cycles: Optional[int] = None
     num_meta: Optional[int] = None
     chord_embedding_path: Optional[str] = None
+    use_cosine_annealing: Optional[bool] = False
 
     @classmethod
     def from_file(

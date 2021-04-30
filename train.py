@@ -76,6 +76,8 @@ def main(args):
             if config.training.evaluation_strategy != transformers.EvaluationStrategy.NO
             else None
         ),
+        use_cosine_annealing=config.use_cosine_annealing,
+        num_cycles=config.num_cycles,
     )
     trainer.train(
         resume_from_checkpoint=(
