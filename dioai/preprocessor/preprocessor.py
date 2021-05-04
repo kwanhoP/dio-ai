@@ -23,6 +23,9 @@ from .utils import constants
 from .utils.container import MidiMeta
 
 MIDI_EXTENSIONS = (".mid", ".MID", ".midi", ".MIDI")
+KEY_SWITCH_VEL = 358
+NOTE_OFF_START = 129
+NOTE_OFF_END = 229
 
 
 class OutputSubDirName(str, enum.Enum):
@@ -398,6 +401,46 @@ class PozalabsPreprocessor(BasePreprocessor):
             **kwargs,
         )
         self.backoffice_api_url = backoffice_api_url
+
+    def _drop_keyswitch_note(note_seq) -> np.ndarray:
+        key_switch_note_start = list(np.where(note_seq == KEY_SWITCH_VEL)[0])
+        # 이후 key_switch_note_off와 길이를 맞추기 위한 패딩
+        key_switch_note_start.append(0)
+        note_off = np.where((NOTE_OFF_START < note_seq) & (note_seq < NOTE_OFF_END))[0]
+
+        key_switch_note_off = []
+        for i in note_off:
+            try:
+                if i > key_switch_note_start[len(key_switch_note_off)]:
+                    key_switch_note_off.append(i)
+            except IndexError:
+                break
+
+        # note 시작부터 슬라이싱 하기 위한 패딩
+        key_switch_note_off.insert(0, -1)
+
+        # 원래 note 시작점 부터 keyswitch note 시작점 슬라이싱
+        no_key_switch_note = []
+        for start, end in zip(key_switch_note_off, key_switch_note_start):
+            if start != key_switch_note_off[-1]:
+                no_key_switch_note.extend(note_seq[start + 1 : end])
+            else:
+                no_key_switch_note.extend(note_seq[start + 1 :])
+
+        return np.array(no_key_switch_note)
+
+    def encode_note_sequence(self, midi_path: Union[str, Path]) -> np.ndarray:
+        # 키 스위치 노트 제거를 위한 override
+        with tempfile.NamedTemporaryFile(suffix=Path(midi_path).suffix) as f:
+            midi_obj = mido.MidiFile(midi_path)
+            if len(midi_obj.tracks) > 2:
+                midi_obj.tracks.pop(-1)
+            midi_obj.save(f.name)
+            note_seqence = np.array(self.note_sequence_encoder.encode(f.name))
+            if KEY_SWITCH_VEL in note_seqence:
+                note_seqence = self._drop_keyswitch_note(note_seqence)
+
+            return note_seqence
 
     def preprocess(
         self,
