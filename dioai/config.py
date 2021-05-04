@@ -27,6 +27,7 @@ class TransformersConfig:
     num_meta: Optional[int] = None
     chord_embedding_path: Optional[str] = None
     use_cosine_annealing: Optional[bool] = False
+    fine_tune_ckpt: Optional[str] = None
 
     @classmethod
     def from_file(

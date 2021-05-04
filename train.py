@@ -48,6 +48,9 @@ def find_latest_checkpoint(checkpoint_dir: Union[str, Path]) -> str:
 
 def load_config(config_path: Union[str, Path]) -> TransformersConfig:
     config = TransformersConfig.from_file(config_path)
+    config.fine_tune_ckpt = (
+        find_latest_checkpoint(config.output_root_dir) if config.resume_training else None
+    )
     config.save()
     return config
 
@@ -79,11 +82,7 @@ def main(args):
         use_cosine_annealing=config.use_cosine_annealing,
         num_cycles=config.num_cycles,
     )
-    trainer.train(
-        resume_from_checkpoint=(
-            find_latest_checkpoint(config.training.output_dir) if config.resume_training else None
-        )
-    )
+    trainer.train(resume_from_checkpoint=config.fine_tune_ckpt)
 
 
 if __name__ == "__main__":
