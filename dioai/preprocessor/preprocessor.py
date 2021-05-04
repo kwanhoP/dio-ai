@@ -402,7 +402,7 @@ class PozalabsPreprocessor(BasePreprocessor):
         )
         self.backoffice_api_url = backoffice_api_url
 
-    def _drop_keyswitch_note(note_seq) -> np.ndarray:
+    def _drop_keyswitch_note(self, note_seq) -> np.ndarray:
         key_switch_note_start = list(np.where(note_seq == KEY_SWITCH_VEL)[0])
         # 이후 key_switch_note_off와 길이를 맞추기 위한 패딩
         key_switch_note_start.append(0)
