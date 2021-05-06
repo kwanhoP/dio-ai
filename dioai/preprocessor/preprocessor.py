@@ -156,8 +156,12 @@ class BasePreprocessor(abc.ABC):
         # 2. 코드 트랙 제거시 좀더 우아한 방법 사용
         with tempfile.NamedTemporaryFile(suffix=Path(midi_path).suffix) as f:
             midi_obj = mido.MidiFile(midi_path)
-            if len(midi_obj.tracks) > 2:
-                midi_obj.tracks.pop(-1)
+            for idx in range(len(midi_obj.tracks)):
+                try:
+                    if "chord" in str(midi_obj.tracks[idx]):
+                        midi_obj.tracks.pop(idx)
+                except IndexError:  # chord_track이 제거 된 경우
+                    continue
             midi_obj.save(f.name)
             return np.array(self.note_sequence_encoder.encode(f.name))
 
@@ -433,8 +437,12 @@ class PozalabsPreprocessor(BasePreprocessor):
         # 키 스위치 노트 제거를 위한 override
         with tempfile.NamedTemporaryFile(suffix=Path(midi_path).suffix) as f:
             midi_obj = mido.MidiFile(midi_path)
-            if len(midi_obj.tracks) > 2:
-                midi_obj.tracks.pop(-1)
+            for idx in range(len(midi_obj.tracks)):
+                try:
+                    if "chord" in str(midi_obj.tracks[idx]):
+                        midi_obj.tracks.pop(idx)
+                except IndexError:  # chord_track이 제거 된 경우
+                    continue
             midi_obj.save(f.name)
             note_seqence = np.array(self.note_sequence_encoder.encode(f.name))
             if KEY_SWITCH_VEL in note_seqence:
