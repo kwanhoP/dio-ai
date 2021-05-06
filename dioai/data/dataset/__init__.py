@@ -3,19 +3,13 @@ import pprint
 
 from dioai.config import TransformersConfig
 
-from .dataset import (
-    GPT2BaseDataset,
-    GPT2ChordMetaToNoteDataset,
-    GPT2MetaToNoteDataset,
-    meta_to_note_collate_fn,
-)
+from .dataset import GPT2ChordMetaToNoteDataset, Seq2SeqDataset, meta_to_note_collate_fn
 
 
 class PozalabsDatasetFactory:
     dataset_map = {
-        GPT2BaseDataset.name: GPT2BaseDataset,
-        GPT2MetaToNoteDataset.name: GPT2MetaToNoteDataset,
         GPT2ChordMetaToNoteDataset.name: GPT2ChordMetaToNoteDataset,
+        Seq2SeqDataset.name: Seq2SeqDataset,
     }
 
     def create(self, config: TransformersConfig, *args, **kwargs):

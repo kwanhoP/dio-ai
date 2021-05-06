@@ -1,17 +1,14 @@
 from __future__ import annotations
 
-from multiprocessing import cpu_count
-from typing import Dict, Generator, Iterator, List, Optional, Union
+from typing import Dict, Generator, Iterator, List, Union
 
 import numpy as np
-import tensorflow as tf
 import torch
 from torch.utils.data import Dataset, IterableDataset
 
 from dioai.config import TransformersConfig
 
-from .gpt2_tf import GPT2ChordMetaToNoteTFDataset, GPT2MetaToNoteTFDataset
-from .magenta_tfrecord import BatchingSchemeArgs, FeatureType, MagentaTFRecordDataset
+from .tf_dataset import GPT2ChordMetaToNoteTFDataset, TransformerDataset
 
 
 class EvalDataset(Dataset):
@@ -26,105 +23,12 @@ class EvalDataset(Dataset):
         return len(self.dataset)
 
 
-class GPT2BaseDataset(IterableDataset):
-    name = "gpt2_base"
+class BaseDataset(IterableDataset):
+    name = "base"
 
-    def __init__(
-        self,
-        config: TransformersConfig,
-        split: str,
-        preprocess: bool = True,
-        random_crop_in_train: bool = True,
-        shuffle: bool = True,
-        training: bool = True,
-        batch_shuffle_size: int = 512,
-        shuffle_buffer_size: int = 10000,
-        num_threads: int = cpu_count(),
-        batching_scheme_args: Optional[BatchingSchemeArgs] = None,
-    ):
-        super().__init__()
-
-        self.config = config
-        self.num_threads = num_threads
-        self.training = training
-
-        self.tfrecord_dataset = MagentaTFRecordDataset(
-            data_dir=config.data_dir, split=getattr(config, f"{split}_split")
-        )
-        self.tfrecord_dataset_build_args = dict(
-            max_length=self.config.model.n_ctx,
-            batch_size=self.config.batch_size,
-            pad_id=self.config.model.pad_token_id,
-            preprocess=preprocess,
-            random_crop_in_train=random_crop_in_train,
-            shuffle=shuffle,
-            training=training,
-            batch_shuffle_size=batch_shuffle_size,
-            shuffle_buffer_size=shuffle_buffer_size,
-            num_threads=num_threads,
-            batching_scheme_args=batching_scheme_args,
-        )
-
-    def build(self) -> Union[IterableDataset, Dataset]:
-        if self.training:
-            return self
-        return self.to_dataset()
-
-    def __iter__(self) -> Generator[Dict[str, torch.Tensor], None, None]:
-        for item in self.prepare_dataset():
-            yield item
-
-    def to_dataset(self) -> Dataset:
-        return EvalDataset(list(self.prepare_dataset()))
-
-    def prepare_dataset(self) -> Iterator:
-        def _prepare_inputs(_features: FeatureType) -> FeatureType:
-            return prepare_inputs(_features, pad_id=self.config.model.pad_token_id)
-
-        tf_dataset = self.tfrecord_dataset.build(**self.tfrecord_dataset_build_args)
-        tf_dataset = tf_dataset.map(_prepare_inputs, num_parallel_calls=self.num_threads)
-        return tf_dataset.as_numpy_iterator()
-
-    def __getitem__(self, index):
-        pass
-
-
-def prepare_inputs(features: FeatureType, pad_id: int = 0) -> FeatureType:
-    """transformers 라이브러리 학습을 위한 데이터 입력을 준비합니다.
-    `attention_mask`와 loss 계산을 위해 필요한, `labels`를 포함한 딕셔너리를 리턴합니다.
-    `labels`는 `input_ids`와 같으며, transformers 라이브러리 내부에서 loss 계산 시 shift 됩니다.
-    """
-    result = compute_attention_mask(features, pad_id)
-    # 텐서 복사
-    result["labels"] = tf.identity(result["input_ids"])
-    return result
-
-
-def compute_attention_mask(features: FeatureType, pad_id: int = 0) -> FeatureType:
-    """tensorflow dataset의 값들을 transformers GPT2 모델에 사용되는 입력값으로 변환합니다.
-    현재 리턴값의 키는 `transformers.GPT2Tokenizer.model_inputs_names` (input_ids, attention_mask)입니다.
-    """
-    targets = features["targets"]
-    result = {
-        "input_ids": targets,
-        "attention_mask": tf.where(
-            tf.not_equal(targets, pad_id),
-            tf.ones_like(targets, dtype=targets.dtype),
-            tf.zeros_like(targets, dtype=targets.dtype),
-        ),
-    }
-    return result
-
-
-class GPT2MetaToNoteDataset(IterableDataset):
-    name = "gpt2_meta_to_note"
-
-    def __init__(
-        self, config: TransformersConfig, split: str, training: bool = True, shuffle: bool = False
-    ):
+    def __init__(self, config: TransformersConfig, training: bool = True, shuffle: bool = False):
         self.config = config
         self.training = training
-        self.tf_dataset = GPT2MetaToNoteTFDataset(self.config.data_dir, split=split)
         self.tf_dataset_build_args = dict(
             batch_size=self.config.batch_size,
             max_length=self.config.model.n_ctx,
@@ -149,36 +53,46 @@ class GPT2MetaToNoteDataset(IterableDataset):
         tf_dataset = self.tf_dataset.build(**self.tf_dataset_build_args)
         return tf_dataset.as_numpy_iterator()
 
-    def __getitem__(self, item: int):
-        ...
 
-
-class GPT2ChordMetaToNoteDataset(GPT2MetaToNoteDataset):
+class GPT2ChordMetaToNoteDataset(BaseDataset):
     name = "gpt2_chord_meta_to_note"
 
     def __init__(
         self, config: TransformersConfig, split: str, training: bool = True, shuffle: bool = False
     ):
-        super().__init__(config=config, split=split, training=training, shuffle=shuffle)
+        super().__init__(config=config, training=training, shuffle=shuffle)
         self.tf_dataset = GPT2ChordMetaToNoteTFDataset(
             self.config.data_dir,
             split=split,
             chord_embedding_path=self.config.chord_embedding_path,
             num_meta=self.config.num_meta,
         )
-        self.tf_dataset_build_args = dict(
-            batch_size=self.config.batch_size,
-            max_length=self.config.model.n_ctx,
-            pad_id=self.config.model.pad_token_id,
-            training=training,
-            shuffle=shuffle,
-        )
 
     def prepare_dataset(self) -> Iterator:
         tf_dataset = self.tf_dataset.build(**self.tf_dataset_build_args)
         for batch in tf_dataset.as_numpy_iterator():
             # 반드시 1차원 이상이어야 함
-            batch["num_meta"] = np.array([self.config.num_meta], dtype=np.int64)
+            batch["num_meta"] = np.array([self.config.num_meta], dtype=np.int32)
+            yield batch
+
+
+class Seq2SeqDataset(BaseDataset):
+    name = "seq2seq"
+
+    def __init__(
+        self, config: TransformersConfig, split: str, training: bool = True, shuffle: bool = False
+    ):
+        super().__init__(config=config, training=training, shuffle=shuffle)
+        self.tf_dataset = TransformerDataset(
+            self.config.data_dir,
+            split=split,
+            chord_embedding_path=self.config.chord_embedding_path,
+            num_meta=self.config.num_meta,
+        )
+
+    def prepare_dataset(self) -> Iterator:
+        tf_dataset = self.tf_dataset.build(**self.tf_dataset_build_args)
+        for batch in tf_dataset.as_numpy_iterator():
             yield batch
 
 
