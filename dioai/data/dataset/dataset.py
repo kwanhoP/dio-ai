@@ -72,7 +72,7 @@ class GPT2ChordMetaToNoteDataset(BaseDataset):
         tf_dataset = self.tf_dataset.build(**self.tf_dataset_build_args)
         for batch in tf_dataset.as_numpy_iterator():
             # 반드시 1차원 이상이어야 함
-            batch["num_meta"] = np.array([self.config.num_meta], dtype=np.int32)
+            batch["num_meta"] = np.array([self.config.num_meta], dtype=np.int64)
             yield batch
 
 

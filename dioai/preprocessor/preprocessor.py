@@ -324,7 +324,7 @@ class RedditPreprocessor(BasePreprocessor):
         encoded_meta: List[Union[int, str]] = self._encode_meta(self._parse_meta(midi_path))
         encoded_meta.append(constants.UNKNOWN)
         encoded_meta: np.ndarray = np.array(encoded_meta, dtype=object)
-        encoded_note_sequence = np.array(self.encode_note_sequence(midi_path), dtype=object)
+        encoded_note_sequence = np.array(self.encode_note_sequence(midi_path), dtype=np.int16)
         return EncodingOutput(meta=encoded_meta, note_sequence=encoded_note_sequence)
 
     def _encode_meta(self, midi_meta: MidiMeta) -> List[int]:
@@ -367,7 +367,7 @@ class Pozalabs2Preprocessor(RedditPreprocessor):
         )
         encoded_meta.append(chord_progression_md5)
         encoded_meta: np.ndarray = np.array(encoded_meta, dtype=object)
-        encoded_note_sequence = np.array(self.encode_note_sequence(midi_path), dtype=object)
+        encoded_note_sequence = np.array(self.encode_note_sequence(midi_path), dtype=np.int16)
         return EncodingOutput(meta=encoded_meta, note_sequence=encoded_note_sequence)
 
     @staticmethod
@@ -590,7 +590,7 @@ class PozalabsPreprocessor(BasePreprocessor):
         )
         encoded_meta.append(chord_progression_md5)
         encoded_meta: np.ndarray = np.array(encoded_meta, dtype=object)
-        encoded_note_sequence = np.array(self.encode_note_sequence(midi_path), dtype=object)
+        encoded_note_sequence = np.array(self.encode_note_sequence(midi_path), dtype=np.int16)
         return EncodingOutput(meta=encoded_meta, note_sequence=encoded_note_sequence)
 
     @staticmethod

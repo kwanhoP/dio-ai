@@ -28,9 +28,9 @@ class GPT2MetaToNoteTFDataset:
     target_filename = "target"
     npy_dir_name_prefix = "output_npy"
     output_signature = {
-        "input_ids": tf.TensorSpec(shape=(None,), dtype=tf.int32),
-        "attention_mask": tf.TensorSpec(shape=(None,), dtype=tf.int32),
-        "labels": tf.TensorSpec(shape=(None,), dtype=tf.int32),
+        "input_ids": tf.TensorSpec(shape=(None,), dtype=tf.int64),
+        "attention_mask": tf.TensorSpec(shape=(None,), dtype=tf.int64),
+        "labels": tf.TensorSpec(shape=(None,), dtype=tf.int64),
     }
 
     def __init__(self, data_dir: Union[str, Path], split: str):
@@ -55,9 +55,9 @@ class GPT2MetaToNoteTFDataset:
             batch_size=batch_size,
             padded_shapes={"input_ids": [None], "attention_mask": [None], "labels": [None]},
             padding_values={
-                "input_ids": tf.constant(pad_id, dtype=tf.int32),
-                "attention_mask": tf.constant(0, dtype=tf.int32),
-                "labels": tf.constant(pad_id, dtype=tf.int32),
+                "input_ids": tf.constant(pad_id, dtype=tf.int64),
+                "attention_mask": tf.constant(0, dtype=tf.int64),
+                "labels": tf.constant(pad_id, dtype=tf.int64),
             },
         )
         if shuffle:
@@ -120,9 +120,9 @@ class GPT2MetaToNoteTFDataset:
 
 class GPT2ChordMetaToNoteTFDataset(GPT2MetaToNoteTFDataset):
     output_signature = {
-        "input_ids": tf.TensorSpec(shape=(None,), dtype=tf.int32),
-        "attention_mask": tf.TensorSpec(shape=(None,), dtype=tf.int32),
-        "labels": tf.TensorSpec(shape=(None,), dtype=tf.int32),
+        "input_ids": tf.TensorSpec(shape=(None,), dtype=tf.int64),
+        "attention_mask": tf.TensorSpec(shape=(None,), dtype=tf.int64),
+        "labels": tf.TensorSpec(shape=(None,), dtype=tf.int64),
         "chord_progression_vector": tf.TensorSpec(shape=(None,), dtype=tf.float32),
     }
 
@@ -160,9 +160,9 @@ class GPT2ChordMetaToNoteTFDataset(GPT2MetaToNoteTFDataset):
             batch_size=batch_size,
             padded_shapes={key: [None] for key in self.output_signature.keys()},
             padding_values={
-                "input_ids": tf.constant(pad_id, dtype=tf.int32),
-                "attention_mask": tf.constant(0, dtype=tf.int32),
-                "labels": tf.constant(pad_id, dtype=tf.int32),
+                "input_ids": tf.constant(pad_id, dtype=tf.int64),
+                "attention_mask": tf.constant(0, dtype=tf.int64),
+                "labels": tf.constant(pad_id, dtype=tf.int64),
                 "chord_progression_vector": tf.constant(pad_id, dtype=tf.float32),
             },
         )
@@ -221,10 +221,10 @@ class TransformerDataset:
     target_filename = "target"
     npy_dir_name_prefix = "output_npy"
     output_signature = {
-        "meta_ids": tf.TensorSpec(shape=(None,), dtype=tf.int32),
-        "note_ids": tf.TensorSpec(shape=(None,), dtype=tf.int32),
-        "attention_mask": tf.TensorSpec(shape=(None,), dtype=tf.int32),
-        "labels": tf.TensorSpec(shape=(None,), dtype=tf.int32),
+        "meta_ids": tf.TensorSpec(shape=(None,), dtype=tf.int16),
+        "note_ids": tf.TensorSpec(shape=(None,), dtype=tf.int16),
+        "attention_mask": tf.TensorSpec(shape=(None,), dtype=tf.int16),
+        "labels": tf.TensorSpec(shape=(None,), dtype=tf.int16),
         "chord_progression_vector": tf.TensorSpec(shape=(None,), dtype=tf.float32),
     }
 
@@ -263,10 +263,10 @@ class TransformerDataset:
             batch_size=batch_size,
             padded_shapes={key: [None] for key in self.output_signature.keys()},
             padding_values={
-                "meta_ids": tf.constant(pad_id, dtype=tf.int32),
-                "note_ids": tf.constant(pad_id, dtype=tf.int32),
-                "attention_mask": tf.constant(0, dtype=tf.int32),
-                "labels": tf.constant(pad_id, dtype=tf.int32),
+                "meta_ids": tf.constant(pad_id, dtype=tf.int16),
+                "note_ids": tf.constant(pad_id, dtype=tf.int16),
+                "attention_mask": tf.constant(0, dtype=tf.int16),
+                "labels": tf.constant(pad_id, dtype=tf.int16),
                 "chord_progression_vector": tf.constant(pad_id, dtype=tf.float32),
             },
         )
