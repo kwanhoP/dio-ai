@@ -84,7 +84,22 @@ class PozalabsMetaParser(BaseMetaParser):
             midi_path,
             keyswitch_velocity=constants.KeySwitchVelocity.get_value(copied_meta_dict["inst"]),
         )
-        return MidiMeta(**copied_meta_dict, min_velocity=min_velocity, max_velocity=max_velocity)
+        min_modulation, max_modulation = utils.get_modulation_range(midi_path)
+        min_expression, max_expression = utils.get_expression_range(midi_path)
+        min_sustain, max_sustain = utils.get_sustain_range(midi_path)
+
+        midi_meta = MidiMeta(
+            **copied_meta_dict,
+            min_velocity=min_velocity,
+            max_velocity=max_velocity,
+            min_modulation=min_modulation,
+            max_modulation=max_modulation,
+            min_expression=min_expression,
+            max_expression=max_expression,
+            min_sustain=min_sustain,
+            max_sustain=max_sustain,
+        )
+        return midi_meta
 
 
 class Pozalabs2MetaParser(BaseMetaParser):

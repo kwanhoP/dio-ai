@@ -21,8 +21,18 @@ DEFAULT_ENCODING_MAPS = {
     "inst": constants.PROGRAM_INST_MAP,
     "genre": constants.GENRE_MAP,
     "track_category": constants.TRACK_CATEGORY_MAP,
+    "rhythm": constants.RHYTHM_MAP,
 }
-ATTR_ALIAS = {"min_velocity": "velocity", "max_velocity": "velocity"}
+ATTR_ALIAS = {
+    "min_velocity": "velocity",
+    "max_velocity": "velocity",
+    "min_modulation": "modulation",
+    "max_modulation": "modulation",
+    "min_expression": "expression",
+    "max_expression": "expression",
+    "min_sustain": "sustain",
+    "max_sustain": "sustain",
+}
 META_TO_ENCODER_ALIAS = {"chord_progression": "has_chord_progression"}
 
 
@@ -44,6 +54,10 @@ class Unknown(AliasMixin, int, enum.Enum):
     GENRE = 525
     VELOCITY = 539
     TRACK_CATEGORY = 567
+    RHYTHM = 576
+    MODULATION = 579
+    EXPRESSION = 607
+    SUSTAIN = 635
 
 
 class Offset(AliasMixin, int, enum.Enum):
@@ -58,6 +72,10 @@ class Offset(AliasMixin, int, enum.Enum):
     VELOCITY = 540
     TRACK_CATEGORY = 568
     HAS_CHORD_PROGRESSION = 574
+    RHYTHM = 577
+    MODULATION = 580
+    EXPRESSION = 608
+    SUSTAIN = 636
 
 
 ENCODERS: Dict[str, EncodeFunc] = dict()
@@ -192,6 +210,55 @@ def encode_has_chord_progression(chord_progression: Union[str, List[str]]) -> in
     if chord_progression == constants.UNKNOWN:
         return Offset.HAS_CHORD_PROGRESSION.value + 1
     return Offset.HAS_CHORD_PROGRESSION.value
+
+
+@register_encoder
+@add_offset
+@encode_unknown()
+def encode_rhythm(rhythm: str, encoding_map: Dict[str, int]) -> int:
+    return encoding_map[rhythm]
+
+
+@register_encoder
+@add_offset
+@encode_unknown()
+def encode_min_modulation(modulation: Union[int, str]):
+    return math.floor(modulation / constants.MODULATION_INTERVAL)
+
+
+@register_encoder
+@add_offset
+@encode_unknown()
+def encode_max_modulation(modulation: Union[int, str]):
+    return math.ceil(modulation / constants.MODULATION_INTERVAL)
+
+
+@register_encoder
+@add_offset
+@encode_unknown()
+def encode_min_expression(expression: Union[int, str]):
+    return math.floor(expression / constants.EXPRESSION_INTERVAL)
+
+
+@register_encoder
+@add_offset
+@encode_unknown()
+def encode_max_expression(expression: Union[int, str]):
+    return math.ceil(expression / constants.EXPRESSION_INTERVAL)
+
+
+@register_encoder
+@add_offset
+@encode_unknown()
+def encode_min_sustain(sustain: Union[int, str]):
+    return math.floor(sustain / constants.SUSTAIN_INTERVAL)
+
+
+@register_encoder
+@add_offset
+@encode_unknown()
+def encode_max_sustain(sustain: Union[int, str]):
+    return math.ceil(sustain / constants.SUSTAIN_INTERVAL)
 
 
 def encode_meta(

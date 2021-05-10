@@ -498,3 +498,19 @@ VAL_NOTE_DICT = {
 DEGREE = len(VAL_NOTE_DICT)
 EIGHTH_NOTE_BEATS: float = 0.5
 UNIT_MEASURES = 2
+
+RHYTHM_MAP = {
+    "standard": 0,
+    "triplet": 1,
+    "swing": 1,
+}
+
+CONTROL_CHANGE_DICT = {
+    "modulation": 1,
+    "expression": 11,
+    "sustain": 64,
+}
+
+MODULATION_INTERVAL = 5
+EXPRESSION_INTERVAL = 5
+SUSTAIN_INTERVAL = 127

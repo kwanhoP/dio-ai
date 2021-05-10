@@ -1019,3 +1019,64 @@ def get_chord_tracks(music21_midi: music21.midi.MidiFile) -> List[music21.midi.M
     if not result:
         raise InvalidMidiError(InvalidMidiErrorMessage.chord_track_not_found.value)
     return result
+
+
+def get_cc_values(midi_track: mido.MidiTrack, control_change: str) -> Optional[List[int]]:
+    """미디 트랙의 control change 값을 리턴하는 함수.
+    control_change 는 constants.CONTROL_CHANGE_DICT 의 키 값중 하나를 인자로 받는다.
+    """
+    if control_change not in constants.CONTROL_CHANGE_DICT.keys():
+        raise ValueError
+
+    cc_parameter = constants.CONTROL_CHANGE_DICT[control_change]
+    available_cc = set(
+        [message.control for message in midi_track if message.type == "control_change"]
+    )
+    if cc_parameter not in available_cc:
+        return None
+
+    cc_values = [
+        message.value
+        for message in midi_track
+        if message.type == "control_change" and message.control == cc_parameter
+    ]
+    return cc_values
+
+
+def get_modulation_range(midi_path: Union[str, Path]) -> Tuple[Union[int, str], Union[int, str]]:
+    mido_obj = mido.MidiFile(midi_path)
+    for midi_track in mido_obj.tracks[1:]:
+        is_chord_track = [message.name for message in midi_track if message.type == "track_name"]
+        if constants.CHORD_TRACK_NAME in is_chord_track:
+            continue
+
+        modulations = get_cc_values(midi_track, control_change="modulation")
+        if not modulations:
+            return constants.UNKNOWN, constants.UNKNOWN
+        return min(modulations), max(modulations)
+
+
+def get_expression_range(midi_path: Union[str, Path]) -> Tuple[Union[int, str], Union[int, str]]:
+    mido_obj = mido.MidiFile(midi_path)
+    for midi_track in mido_obj.tracks[1:]:
+        is_chord_track = [message.name for message in midi_track if message.type == "track_name"]
+        if constants.CHORD_TRACK_NAME in is_chord_track:
+            continue
+
+        expressions = get_cc_values(midi_track, control_change="expression")
+        if not expressions:
+            return constants.UNKNOWN, constants.UNKNOWN
+        return min(expressions), max(expressions)
+
+
+def get_sustain_range(midi_path: Union[str, Path]) -> Tuple[Union[int, str], Union[int, str]]:
+    mido_obj = mido.MidiFile(midi_path)
+    for midi_track in mido_obj.tracks[1:]:
+        is_chord_track = [message.name for message in midi_track if message.type == "track_name"]
+        if constants.CHORD_TRACK_NAME in is_chord_track:
+            continue
+
+        sustains = get_cc_values(midi_track, control_change="sustain")
+        if not sustains:
+            return constants.UNKNOWN, constants.UNKNOWN
+        return min(sustains), max(sustains)

@@ -47,6 +47,13 @@ class TestPozalabsMetaEncoder:
             max_velocity=127,
             track_category="main_melody",
             chord_progression=["C", "C", "C", "C"],
+            rhythm="standard",
+            min_modulation=90,
+            max_modulation=107,
+            min_expression=70,
+            max_expression=102,
+            min_sustain=0,
+            max_sustain=127,
         )
         expected = [
             # 39 + Offset.BPM (423)
@@ -70,6 +77,20 @@ class TestPozalabsMetaEncoder:
             # 0 + Offset.TRACK_CATEGORY,
             568,
             574,
+            # 0 + Offset.RHYTHM
+            577,
+            # 18 + Offset.MODULATION
+            598,
+            # 22 + Offset.MODULATION
+            602,
+            # 14 + Offset.EXPRESSION
+            622,
+            # 21 + Offset.EXPRESSION
+            629,
+            # 0 + Offset.SUSTAIN
+            636,
+            # 1 + Offset.SUSTAIN
+            637,
         ]
         encoded_meta = self.meta_encoder.encode(midi_meta)
         assert encoded_meta == expected

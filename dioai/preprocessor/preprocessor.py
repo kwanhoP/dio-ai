@@ -549,29 +549,42 @@ class PozalabsPreprocessor(BasePreprocessor):
                 if bpm is None or audio_key is None:
                     continue
 
+                augmented_midi_path = sample_id_to_path[copied_sample_info["id"]]
+                # TODO 코드 트랙 제외하기 위한 임시방편
+                # utils.augment_by_key 에서 chord 트랙 제외 로직 수정하면 삭제 가능
+                augmented_midi_track = mido.MidiFile(augmented_midi_path).tracks[-1]
+                is_chord_track = [
+                    event.name for event in augmented_midi_track if event.type == "track_name"
+                ]
+                if constants.CHORD_TRACK_NAME in is_chord_track:
+                    continue
+
                 copied_sample_info = copy.deepcopy(parent_sample_ids_to_info[parent_sample_id])
                 copied_sample_info["id"] = copied_sample_info["id"]
                 copied_sample_info["bpm"] = int(bpm)
                 copied_sample_info["audio_key"] = audio_key
+                copied_sample_info["rhythm"] = copied_sample_info.get("sample_rhythm")
 
-            if copied_sample_info["track_category"] in constants.NON_KEY_TRACK_CATEGORIES:
-                continue
+                if copied_sample_info["track_category"] in constants.NON_KEY_TRACK_CATEGORIES:
+                    continue
 
-            if not copied_sample_info["chord_progressions"]:
-                continue
+                if not copied_sample_info["chord_progressions"]:
+                    continue
 
-            midi_path = sample_id_to_path.get(copied_sample_info["id"])
-            # 백오피스에는 등록되었으나 아직 다운로드 되지 않은 샘플은 건너뜀
-            if midi_path is None:
-                continue
+                midi_path = sample_id_to_path.get(copied_sample_info["id"])
+                # 백오피스에는 등록되었으나 아직 다운로드 되지 않은 샘플은 건너뜀
+                if midi_path is None:
+                    continue
 
-            encoding_output = self._preprocess_midi(
-                sample_info=copied_sample_info, midi_path=midi_path
-            )
-            output_dir = encode_tmp_dir.joinpath(f"{idx:04d}")
-            output_dir.mkdir(exist_ok=True, parents=True)
-            np.save(output_dir.joinpath(f"input_{sample_info_idx}"), encoding_output.meta)
-            np.save(output_dir.joinpath(f"target_{sample_info_idx}"), encoding_output.note_sequence)
+                encoding_output = self._preprocess_midi(
+                    sample_info=copied_sample_info, midi_path=augmented_midi_path
+                )
+                output_dir = encode_tmp_dir.joinpath(f"{idx:04d}")
+                output_dir.mkdir(exist_ok=True, parents=True)
+                np.save(output_dir.joinpath(f"input_{sample_info_idx}"), encoding_output.meta)
+                np.save(
+                    output_dir.joinpath(f"target_{sample_info_idx}"), encoding_output.note_sequence
+                )
 
     def _preprocess_midi(
         self, sample_info: Dict[str, Any], midi_path: Union[str, Path]

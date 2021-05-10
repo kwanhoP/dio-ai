@@ -35,3 +35,10 @@ class MidiMeta(BaseModel):
     max_velocity: Union[int, str]
     track_category: str
     chord_progression: Union[str, List[str]]
+    rhythm: str
+    min_modulation: Union[int, str]
+    max_modulation: Union[int, str]
+    min_expression: Union[int, str]
+    max_expression: Union[int, str]
+    min_sustain: Union[int, str]
+    max_sustain: Union[int, str]
