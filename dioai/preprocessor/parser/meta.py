@@ -41,6 +41,9 @@ class RedditMetaParser(BaseMetaParser):
         _get_meta_message_func = functools.partial(utils.get_meta_message_v2, meta_track=meta_track)
 
         min_velocity, max_velocity = utils.get_velocity_range(midi_path)
+        min_modulation, max_modulation = utils.get_modulation_range(midi_path)
+        min_expression, max_expression = utils.get_expression_range(midi_path)
+        min_sustain, max_sustain = utils.get_sustain_range(midi_path)
         midi_meta = MidiMeta(
             bpm=utils.get_bpm_v2(_get_meta_message_func(event_type="set_tempo")),
             audio_key=utils.get_audio_key_v2(_get_meta_message_func(event_type="key_signature")),
@@ -57,6 +60,13 @@ class RedditMetaParser(BaseMetaParser):
             max_velocity=max_velocity,
             track_category=constants.UNKNOWN,
             chord_progression=constants.UNKNOWN,
+            rhythm=constants.UNKNOWN,
+            min_modulation=min_modulation,
+            max_modulation=max_modulation,
+            min_expression=min_expression,
+            max_expression=max_expression,
+            min_sustain=min_sustain,
+            max_sustain=max_sustain,
         )
         # reddit 데이터셋을 처리할 때 BPM/Key/Time signature 가 모두 기본값이면 UNKNOWN 처리
         if self.default_to_unknown and _is_all_default_meta(midi_meta):
@@ -122,6 +132,9 @@ class Pozalabs2MetaParser(BaseMetaParser):
         _get_meta_message_func = functools.partial(utils.get_meta_message_v2, meta_track=meta_track)
 
         min_velocity, max_velocity = utils.get_velocity_range(midi_path)
+        min_modulation, max_modulation = utils.get_modulation_range(midi_path)
+        min_expression, max_expression = utils.get_expression_range(midi_path)
+        min_sustain, max_sustain = utils.get_sustain_range(midi_path)
         midi_meta = MidiMeta(
             bpm=utils.get_bpm_v2(_get_meta_message_func(event_type="set_tempo")),
             audio_key=utils.get_audio_key_v2(_get_meta_message_func(event_type="key_signature")),
@@ -143,6 +156,13 @@ class Pozalabs2MetaParser(BaseMetaParser):
                 if midi_chord_progression_info is not None
                 else constants.UNKNOWN
             ),
+            rhythm=constants.UNKNOWN,
+            min_modulation=min_modulation,
+            max_modulation=max_modulation,
+            min_expression=min_expression,
+            max_expression=max_expression,
+            min_sustain=min_sustain,
+            max_sustain=max_sustain,
         )
         return midi_meta
 

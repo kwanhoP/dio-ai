@@ -299,6 +299,11 @@ class RedditPreprocessor(BasePreprocessor):
         res_note = []
         res_meta = []
         for _, midi_path in enumerate(midi_paths_chunk):
+            midi_tracks = mido.MidiFile(midi_path).tracks
+            is_chord_track = [event.name for event in midi_tracks[-1] if event.type == "track_name"]
+            if constants.CHORD_TRACK_NAME in is_chord_track and len(midi_tracks[1:]) == 1:
+                continue
+
             try:
                 encoding_output = self._preprocess_midi(midi_path)
                 res_meta.append(encoding_output.meta)
