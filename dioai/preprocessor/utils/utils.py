@@ -640,26 +640,15 @@ def encode_meta_info(midi_info: MidiInfo) -> List:
     return meta
 
 
-def split_train_val_test(
-    input: np.array, target: np.ndarray, test_ratio: float, val_ratio: float
-) -> np.array:
-    x_train, x_test, y_train, y_test = train_test_split(
-        input, target, test_size=(test_ratio + val_ratio), shuffle=True, random_state=2021
-    )
-    x_val, x_test, y_val, y_test = train_test_split(
-        x_test,
-        y_test,
-        test_size=(test_ratio / (test_ratio + val_ratio)),
-        shuffle=True,
-        random_state=2021,
+def split_train_val(input: np.array, target: np.ndarray, val_ratio: float) -> np.array:
+    x_train, x_val, y_train, y_val = train_test_split(
+        input, target, test_size=val_ratio, shuffle=True, random_state=2021
     )
     splits = {
         "input_train": x_train,
         "input_val": x_val,
-        "input_test": x_test,
         "target_train": y_train,
         "target_val": y_val,
-        "target_test": y_test,
     }
     return splits
 

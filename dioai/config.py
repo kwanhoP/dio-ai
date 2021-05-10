@@ -16,7 +16,6 @@ class TransformersConfig:
     data_dir: str
     train_split: str
     eval_split: str
-    test_split: str
     resume_training: str
     tf_gpu_memory_limit: int
     model: PretrainedConfig

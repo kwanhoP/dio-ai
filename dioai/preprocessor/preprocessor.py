@@ -208,7 +208,6 @@ class RedditPreprocessor(BasePreprocessor):
         chunk_midi_arguments: ChunkMidiArguments,
         parse_midi_arguments: ParseMidiArguments,
         val_split_ratio: float = 0.1,
-        test_split_ratio: float = 0.1,
         augment: bool = False,
     ) -> None:
         sub_dir = get_sub_dir(
@@ -252,11 +251,10 @@ class RedditPreprocessor(BasePreprocessor):
             inputs = np.array([element for array in inputs for element in array])
             targets = np.array([element for array in targets for element in array])
 
-            splits = utils.split_train_val_test(
+            splits = utils.split_train_val(
                 inputs,
                 targets,
                 val_ratio=val_split_ratio,
-                test_ratio=test_split_ratio,
             )
             output_dir = sub_dir.encode_npy.joinpath(f"{npy_idx:04d}")
             output_dir.mkdir(exist_ok=True, parents=True)
@@ -456,7 +454,6 @@ class PozalabsPreprocessor(BasePreprocessor):
         num_cores: int,
         preprocess_steps: List[str] = None,
         val_split_ratio: int = 0.1,
-        test_split_ratio: int = 0.1,
         augment: bool = False,
     ):
         sub_dir_exclude = (SubDirName.CHUNKED, SubDirName.PARSED, SubDirName.TMP)
@@ -487,10 +484,9 @@ class PozalabsPreprocessor(BasePreprocessor):
             sample_id_to_path=sample_id_to_path,
             num_cores=num_cores,
         )
-        splits = utils.split_train_val_test(
+        splits = utils.split_train_val(
             *self.concat_npy(sub_dir.encode_tmp),
             val_ratio=val_split_ratio,
-            test_ratio=test_split_ratio,
         )
         for split_name, data_split in splits.items():
             np.save(str(sub_dir.encode_npy.joinpath(split_name)), data_split)
