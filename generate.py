@@ -48,6 +48,15 @@ def get_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--track_category", type=str, choices=list(constants.TRACK_CATEGORY_MAP.keys())
     )
+    parser.add_argument(
+        "--rhythm", type=str, default="standard", choices=list(constants.RHYTHM_MAP.keys())
+    )
+    parser.add_argument("--min_modulation", type=int, default=40)
+    parser.add_argument("--max_modulation", type=int, default=80)
+    parser.add_argument("--min_expression", type=int, default=40)
+    parser.add_argument("--max_expression", type=int, default=80)
+    parser.add_argument("--min_sustain", type=int, default=0)
+    parser.add_argument("--max_sustain", type=int, default=127)
     # Sampling
     parser.add_argument("--num_generate", type=int, help="생성 개수")
     parser.add_argument("--top_k", type=int, default=50)

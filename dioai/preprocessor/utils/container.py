@@ -18,6 +18,13 @@ class MidiInfo:
     max_velocity: int
     track_category: str
     chord_progression: List[str]
+    rhythm: int
+    min_modulation: int
+    max_modulation: int
+    min_expression: int
+    max_expression: int
+    min_sustain: int
+    max_sustain: int
 
     # note
     note_seq: List[int]
