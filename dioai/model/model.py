@@ -20,6 +20,8 @@ from transformers.models.gpt2.modeling_gpt2 import (
 # https://github.com/huggingface/transformers/blob/master/src/transformers/models/gpt2/modeling_gpt2.py#L804
 from transformers.utils.model_parallel_utils import assert_device_map, get_device_map
 
+from dioai.preprocessor.encoder.meta import Offset
+
 
 class GPT2BaseModel(GPT2LMHeadModel):
     name = "gpt2_base"
@@ -168,18 +170,20 @@ class GPT2ChordMetaToNoteModel(GPT2BaseModel):
         inputs_embeds = self.transformer.wte(input_ids)
         # 코드 진행 임베딩 반영
         # chord_progression_vector: 1 or embedding vector
-        chord_progression_idx = num_meta - 1
-
         # 생성 시에는 토큰이 하나씩 생성되기 때문에, 코드 벡터를 적용할 수 없음
         # 최초 입력값 인코딩 시에만 사용
-        has_chord_progression_offset = self.config.vocab_size - 2
+        for idx, (name, info) in enumerate(Offset.__members__.items()):
+            if name == "HAS_CHORD_PROGRESSION":
+                chord_progression_idx = idx
+                has_chord_progression_offset = info.value
+
         if (
-            input_ids.size(1) >= num_meta
+            input_ids.size(1) >= chord_progression_idx + 1
             and (input_ids[:, chord_progression_idx] >= has_chord_progression_offset).all().item()
         ):
             has_chord_progression = input_ids[:, chord_progression_idx]
             # offset 제거 (has_chord_progression: 2차원이며, 토큰은 0부터 시작하므로 2를 뺌)
-            has_chord_progression = has_chord_progression - (self.config.vocab_size - 2)
+            has_chord_progression = has_chord_progression - has_chord_progression_offset
             # TODO: 불필요한 연산을 막기 위해 전처리 수정할 것 (574: Yes -> No, 575: No -> Yes)
             # 2021.04.13 현재 574가 코드 진행 존재, 575가 코드 진행 부재이기 때문에,
             # Offset 574를 빼면 코드 진행이 0, 부재가 1임
