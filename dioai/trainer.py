@@ -14,7 +14,7 @@ if is_fairscale_available():
     from fairscale.optim import OSS
 
 
-class Trainer(_Trainer):
+class Trainer_hf(_Trainer):
     def __init__(
         self,
         use_cosine_annealing: Optional[bool] = None,

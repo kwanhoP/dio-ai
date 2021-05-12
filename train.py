@@ -5,16 +5,18 @@ from typing import Union
 import sentry_sdk
 import tensorflow as tf
 import transformers
+from pytorch_lightning import Trainer
 
-from dioai.config import TransformersConfig
+from dioai.config import PytorchlightConfig, TransformersConfig
 from dioai.data.dataset import PozalabsDatasetFactory
-from dioai.model import PozalabsModelFactory
-from dioai.trainer import Trainer
+from dioai.model import ConditionalRelativeTransformer, ModelType, PozalabsModelFactory
+from dioai.trainer import Trainer_hf
 
 
 def get_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser("Train model")
     parser.add_argument("--config_path", type=str, help="전체 설정값이 저장된 JSON 파일 경로")
+    parser.add_argument("--model_type", type=str, help="모델 구현체 type", choices=["hf", "pl"])
     return parser
 
 
@@ -46,29 +48,32 @@ def find_latest_checkpoint(checkpoint_dir: Union[str, Path]) -> str:
     return str(sorted_checkpoints[-1])
 
 
-def load_config(config_path: Union[str, Path]) -> TransformersConfig:
-    config = TransformersConfig.from_file(config_path)
-    config.fine_tune_ckpt = (
-        find_latest_checkpoint(config.output_root_dir) if config.resume_training else None
-    )
-    config.save()
+def load_config(config_path: Union[str, Path], model_type: str) -> TransformersConfig:
+    if model_type == ModelType.HuggingFace.value:
+        config = TransformersConfig.from_file(config_path)
+        config.fine_tune_ckpt = (
+            find_latest_checkpoint(config.output_root_dir) if config.resume_training else None
+        )
+        config.save()
+    elif model_type == ModelType.PytorchLightning.value:
+        config = PytorchlightConfig.from_file(config_path)
     return config
 
 
-def main(args):
+def main_hf(args):
     sentry_sdk.init(
         "https://11345898b114459fb6eb068986b66eea@o226139.ingest.sentry.io/5690046",
         traces_sample_rate=1.0,
     )
 
-    config = load_config(Path(args.config_path).expanduser())
+    config = load_config(Path(args.config_path).expanduser(), args.model_type)
 
     limit_tf_gpu_memory(config.tf_gpu_memory_limit)
 
     dataset_factory = PozalabsDatasetFactory()
     model_factory = PozalabsModelFactory()
 
-    trainer: transformers.Trainer = Trainer(
+    trainer: transformers.Trainer = Trainer_hf(
         model=model_factory.create(config.model_name, config.model),
         args=config.training,
         train_dataset=dataset_factory.create(config=config, split=config.train_split),
@@ -85,6 +90,25 @@ def main(args):
     trainer.train(resume_from_checkpoint=config.fine_tune_ckpt)
 
 
+def main_pl(args):
+    model_factory = PozalabsModelFactory()
+    config = load_config(args.config_path, args.model_type)
+    trainer = Trainer(
+        gpus=config.n_gpu,
+        fast_dev_run=False,
+        default_root_dir=config.output_root_dir,
+        accelerator="ddp",
+    )
+    if config.resume_training:
+        models = ConditionalRelativeTransformer.load_from_checkpoint(config.ckpt_pth, config=config)
+    else:
+        models = model_factory.create(config.model_name, config)
+    trainer.fit(models)
+
+
 if __name__ == "__main__":
     known_args, _ = get_parser().parse_known_args()
-    main(known_args)
+    if known_args.model_type == ModelType.HuggingFace.value:
+        main_hf(known_args)
+    elif known_args.model_type == ModelType.PytorchLightning.value:
+        main_pl(known_args)

@@ -11,6 +11,46 @@ from transformers import GPT2Config, PretrainedConfig, TrainingArguments
 
 
 @dataclass
+class PytorchlightConfig:
+    model_name: str
+    data_dir: str
+    resume_training: str
+    training: str
+    output_root_dir: str
+    ckpt_pth: str
+    note_vocab_size: int
+    meta_vocab_size: int
+    n_ctx: int
+    n_embd: int
+    n_layer: int
+    eos_token_id: int
+    sos_token_id: int
+    pad_token_id: int
+    dropout_rate: float
+    n_gpu: int
+    n_epochs: int
+    max_steps: int
+    batch_size: int
+    learning_rate: float
+    split: str
+    num_meta: Optional[int] = None
+    chord_embedding_path: Optional[str] = None
+
+    @classmethod
+    def from_file(cls, json_path: Union[str, Path]):
+        with open(json_path, "r") as f:
+            data = json.load(f)
+        data = expanduser_data(data)
+        return cls(**data)
+
+    def save(self) -> None:
+        output_path = Path(self.output_root_dir).joinpath("root_config.json")
+        output_path.parent.mkdir(exist_ok=True, parents=True)
+        with open(output_path, "w") as f:
+            json.dump(self.dict(), f, indent=2)
+
+
+@dataclass
 class TransformersConfig:
     model_name: str
     data_dir: str

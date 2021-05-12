@@ -1,6 +1,7 @@
 from typing import Any, Dict, Union
 
 import numpy as np
+import pytorch_lightning as pl
 import torch
 import torch.nn as nn
 from torch.nn import CrossEntropyLoss
@@ -20,11 +21,13 @@ from transformers.models.gpt2.modeling_gpt2 import (
 # https://github.com/huggingface/transformers/blob/master/src/transformers/models/gpt2/modeling_gpt2.py#L804
 from transformers.utils.model_parallel_utils import assert_device_map, get_device_map
 
+from dioai.data.dataset.dataset import RelativeTransformerDataset
+from dioai.model.layer import Decoder, Encoder, SmoothCrossEntropyLoss, get_masked_with_pad_tensor
 from dioai.preprocessor.encoder.meta import Offset
 
 
 class GPT2BaseModel(GPT2LMHeadModel):
-    name = "gpt2_base"
+    name = "gpt2_base_hf"
 
     def __init__(self, config: PretrainedConfig):
         super().__init__(config)
@@ -103,11 +106,11 @@ class GPT2BaseModel(GPT2LMHeadModel):
 
 
 class GP2MetaToNoteModel(GPT2BaseModel):
-    name = "gpt2_meta_to_note"
+    name = "gpt2_meta_to_note_hf"
 
 
 class GPT2ChordMetaToNoteModel(GPT2BaseModel):
-    name = "gpt2_chord_meta_to_note"
+    name = "gpt2_chord_meta_to_note_hf"
 
     def __init__(self, config: Union[PretrainedConfig, GPT2Config]):
         super().__init__(config)
@@ -259,3 +262,53 @@ class GPT2ChordMetaToNoteModel(GPT2BaseModel):
             "num_meta": kwargs.get("num_meta"),
             "chord_progression_vector": kwargs.get("chord_progression_vector"),
         }
+
+
+class ConditionalRelativeTransformer(pl.LightningModule):
+    name = "condition_relative_transformer_pl"
+
+    def __init__(self, config):
+        super().__init__()
+        self.training = config.training
+        self.config = config
+        self.max_seq = config.n_ctx
+        self.embedding_dim = config.n_embd
+        self.note_vocab_size = config.note_vocab_size
+        self.meta_vocab_size = config.meta_vocab_size
+        self.Encoder = Encoder(self.config)
+        self.Decoder = Decoder(self.config)
+        self.fc = torch.nn.Linear(self.embedding_dim, self.note_vocab_size)
+        self.learning_rate = config.learning_rate
+        self.batch_size = config.batch_size
+
+    def forward(self, meta, note):
+        if self.training:
+            _, _, look_ahead_mask = get_masked_with_pad_tensor(
+                self.max_seq, note, note, self.config.pad_token_id
+            )
+            enc_out, w = self.Encoder(meta, mask=None)
+            dec_out = self.Decoder(note, enc_out, mask=None, lookup_mask=look_ahead_mask)
+            fc = self.fc(dec_out)
+            return (
+                fc.contiguous()
+                if self.training
+                else (fc.contiguous(), [weight.contiguous() for weight in w])
+            )
+
+    def training_step(self, batch, idx):
+        meta, note_in, note_trg = batch
+        outputs = self(meta, note_in)
+        metric = SmoothCrossEntropyLoss(0.1, self.note_vocab_size, self.config.pad_token_id)
+        loss = metric(outputs, note_trg)
+        tensor_board_logs = {"train_loss": loss, "lr": self.learning_rate}
+        return {"loss": loss, "log": tensor_board_logs}
+
+    def configure_optimizers(self):
+        optimizer = torch.optim.Adam(self.parameters(), lr=self.learning_rate)
+        scheduler = torch.optim.lr_scheduler.StepLR(optimizer, step_size=20, gamma=0.1)
+        return [optimizer], [scheduler]
+
+    def train_dataloader(self):
+        train_dataset = RelativeTransformerDataset(self.config)
+        train_loader = torch.utils.data.DataLoader(train_dataset, self.batch_size, shuffle=False)
+        return train_loader
