@@ -1080,3 +1080,72 @@ def get_sustain_range(midi_path: Union[str, Path]) -> Tuple[Union[int, str], Uni
         if not sustains:
             return constants.UNKNOWN, constants.UNKNOWN
         return min(sustains), max(sustains)
+
+
+def combine_dataset(
+    reddit_pth: str,
+    poza_pth: str,
+    poza2_pth: str,
+    reddit_num_sampling: int,
+    num_meta: int,
+    val_ratio: float,
+    save_dir: str,
+) -> None:
+    def _concat_npy(pth: str) -> Union[np.ndarray, np.ndarray]:
+        def _gather(_prefix):
+            return sorted(
+                str(i) for i in Path(pth).rglob("**/*/*.npy") if i.stem.startswith(_prefix)
+            )
+
+        def _concat(npy_list):
+            res = None
+            for f in npy_list:
+                tmp = np.load(f, allow_pickle=True)
+                if res is not None:
+                    res = np.concatenate((res, tmp))
+                else:
+                    res = tmp
+            return res
+
+        return _concat(_gather("input")), _concat(_gather("target"))
+
+    def _concat_meta_note(input: np.ndarray, target: np.ndarray) -> np.ndarray:
+        all = []
+        for meta, note in zip(input, target):
+            all.append(np.concatenate((meta, note)))
+        return np.array(all)
+
+    def _combine_data(
+        reddit: np.ndarray,
+        poza: np.ndarray,
+        poza2: np.ndarray,
+        num_meta: int,
+        reddit_num_sampling: int,
+    ) -> Union[np.ndarray, np.ndarray]:
+        reddit_sample = np.random.choice(reddit, reddit_num_sampling, replace=False)
+        total = np.concatenate((reddit_sample, poza, poza2))
+        meta = []
+        note = []
+        for i in total:
+            meta.append(i[: num_meta + 1])
+            note.append(i[num_meta + 1 :])
+        return np.array(meta), np.array(note)
+
+    # load datasets
+    input_reddit = np.load(f"{reddit_pth}/input_train.npy", allow_pickle=True)
+    target_reddit = np.load(f"{reddit_pth}/target_train.npy", allow_pickle=True)
+    input_poza2, target_poza2 = _concat_npy(poza2_pth)
+    input_poza, target_poza = _concat_npy(poza_pth)
+
+    # concat meta & note respectively
+    reddit_all = _concat_meta_note(input_reddit, target_reddit)
+    poza_all = _concat_meta_note(input_poza, target_poza)
+    poza2_all = _concat_meta_note(input_poza2, target_poza2)
+
+    # combine, mix, split 3 datasets
+    meta, note = _combine_data(reddit_all, poza_all, poza2_all, num_meta, reddit_num_sampling)
+    splits = split_train_val(meta, note, val_ratio=val_ratio)
+
+    # save
+    for split_name, data_split in splits.items():
+        np.save(str(Path(save_dir).joinpath(split_name)), data_split)
