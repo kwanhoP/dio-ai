@@ -132,6 +132,7 @@ class GPT2ChordMetaToNoteTFDataset(GPT2MetaToNoteTFDataset):
         split: str,
         chord_embedding_path: Union[str, Path],
         num_meta: int,
+        n_embed: int,
     ):
         super().__init__(data_dir=data_dir, split=split)
         with open(chord_embedding_path, "rb") as f_in:
@@ -141,6 +142,7 @@ class GPT2ChordMetaToNoteTFDataset(GPT2MetaToNoteTFDataset):
             for chord_progression, vector in _chord_embedding_table_raw.items()
         }
         self.num_meta = num_meta
+        self.n_embed = n_embed
 
     def build(
         self,
@@ -200,9 +202,8 @@ class GPT2ChordMetaToNoteTFDataset(GPT2MetaToNoteTFDataset):
                 input_ids = np.concatenate([input_ids, target_feature])
                 attention_mask = compute_attention_mask(input_ids)
 
-                # 설정값으로 조정할 수 있게 변경
                 chord_progression_vector = self.chord_embedding_table.get(
-                    chord_progression_hash, np.ones(768)
+                    chord_progression_hash, np.ones(self.n_embed)
                 )
                 yield {
                     "input_ids": input_ids,

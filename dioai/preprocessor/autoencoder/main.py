@@ -13,7 +13,7 @@ def train(args, config, chord_token):
         gpus=1,
         max_epochs=150,
         fast_dev_run=False,
-        default_root_dir="/media/experiments/checkpoints/autoencoder_chord_to_vector",
+        default_root_dir=args.ckpt_dir,
     )
     if args.model == "gru":
         models = model.GruAutoencoder(config, chord_token, args.batch_size)
@@ -23,25 +23,24 @@ def train(args, config, chord_token):
 
 
 def inference(args, config, chord_token, raw_chord_progression):
+    embed_dim = config["d_hidn"]
     if args.model == "gru":
         models = model.GruAutoencoder.load_from_checkpoint(
-            args.ckpt_path, config=config, chord_token=chord_token, batch_size=1
+            args.ckpt_dir, config=config, chord_token=chord_token, batch_size=1
         )
         models.eval()
         data_loader = models.test_dataloader()
-        chord_embedding_vector = np.zeros(shape=(len(chord_token), config["d_hidn"]))
+        chord_embedding_vector = np.zeros(shape=(len(chord_token), embed_dim))
         for idx, data in enumerate(data_loader):
             chord_embedding_vector[idx] = models.encode_latent_vector(data).detach().numpy()
 
         chord_embedding_table = dict(zip(raw_chord_progression, chord_embedding_vector))
 
-        with open(
-            "/media/data/dioai/pozalabs/chord_embedding_table/chord_embedding_table.pickle", "wb"
-        ) as fw:
+        with open(f"{args.output_dir}/{embed_dim}_chord_embedding_table.pickle", "wb") as fw:
             pickle.dump(chord_embedding_table, fw)
 
     elif args.model == "transformer":
-        models = model.TransformerAutoEncoder(args.ckpt_path)
+        models = model.TransformerAutoEncoder(args.ckpt_dir)
 
 
 def main(args):
@@ -74,11 +73,18 @@ if __name__ == "__main__":
         help="오토인코더 모델 선택",
     )
     parser.add_argument(
-        "--ckpt_path",
-        default="",
+        "--ckpt_dir",
+        default="/media/experiments",
         type=str,
         required=False,
         help="ckpt 경로",
+    )
+    parser.add_argument(
+        "--output_dir",
+        default="/media/data/dioai/train/chord_progression",
+        type=str,
+        required=False,
+        help="chord_embedding_table 저장 경로, inference 시 사용",
     )
     parser.add_argument(
         "--train",
