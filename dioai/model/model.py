@@ -300,8 +300,8 @@ class ConditionalRelativeTransformer(pl.LightningModule):
         outputs = self(meta, note_in)
         metric = SmoothCrossEntropyLoss(0.1, self.note_vocab_size, self.config.pad_token_id)
         loss = metric(outputs, note_trg)
-        tensor_board_logs = {"train_loss": loss, "lr": self.learning_rate}
-        return {"loss": loss, "log": tensor_board_logs}
+        self.log("train_loss", loss)
+        return loss
 
     def configure_optimizers(self):
         optimizer = torch.optim.Adam(self.parameters(), lr=self.learning_rate)
@@ -310,5 +310,7 @@ class ConditionalRelativeTransformer(pl.LightningModule):
 
     def train_dataloader(self):
         train_dataset = RelativeTransformerDataset(self.config)
-        train_loader = torch.utils.data.DataLoader(train_dataset, self.batch_size, shuffle=False)
+        train_loader = torch.utils.data.DataLoader(
+            train_dataset, self.batch_size, shuffle=False, num_workers=10
+        )
         return train_loader

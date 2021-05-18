@@ -33,6 +33,8 @@ class PytorchlightConfig:
     batch_size: int
     learning_rate: float
     split: str
+    wandb_name: str
+    wandb_project: str
     num_meta: Optional[int] = None
     chord_embedding_path: Optional[str] = None
 

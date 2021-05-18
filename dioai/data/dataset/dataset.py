@@ -141,7 +141,7 @@ class RelativeTransformerDataset(torch.utils.data.Dataset):
         self.total_data_len = config.max_steps * config.batch_size * config.n_gpu
 
     def __len__(self):
-        return self.total_data_len
+        return self.data_len
 
     def __getitem__(self, idx):
         if idx >= self.data_len:
@@ -152,13 +152,18 @@ class RelativeTransformerDataset(torch.utils.data.Dataset):
             self.dec_input, self.dec_output, self.enc_input = self._padding(
                 self.shifted_note, self.note, self.meta, self.pad_token, self.maxlen, self.num_meta
             )
-            print(f"cnt: {idx}, {self.data_len}")
 
-        return (
-            torch.tensor(self.enc_input[max(0, idx - self.data_len)]).long(),
-            torch.tensor(self.dec_input[max(0, idx - self.data_len)]).long(),
-            torch.tensor(self.dec_output[max(0, idx - self.data_len)]).long(),
-        )
+            return (
+                torch.tensor(self.enc_input[max(0, idx - self.data_len)]).long(),
+                torch.tensor(self.dec_input[max(0, idx - self.data_len)]).long(),
+                torch.tensor(self.dec_output[max(0, idx - self.data_len)]).long(),
+            )
+        else:
+            return (
+                torch.tensor(self.enc_input[idx]).long(),
+                torch.tensor(self.dec_input[idx]).long(),
+                torch.tensor(self.dec_output[idx]).long(),
+            )
 
     def _padding(
         self,
