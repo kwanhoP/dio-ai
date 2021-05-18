@@ -43,20 +43,22 @@ def get_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--genre", type=str, default="cinematic", choices=list(constants.GENRE_MAP.keys())
     )
-    parser.add_argument("--min_velocity", type=int, default=40)
-    parser.add_argument("--max_velocity", type=int, default=80)
+    # velocity, modulation, expression, sustain이 "unknown"을 받을 수 있도록 type=int 삭제함.
+    # 원칙적으로 가능한 인풋 타입은 Union[int, str]
+    parser.add_argument("--min_velocity", default=40)
+    parser.add_argument("--max_velocity", default=80)
     parser.add_argument(
         "--track_category", type=str, choices=list(constants.TRACK_CATEGORY_MAP.keys())
     )
     parser.add_argument(
         "--rhythm", type=str, default="standard", choices=list(constants.RHYTHM_MAP.keys())
     )
-    parser.add_argument("--min_modulation", type=int, default=40)
-    parser.add_argument("--max_modulation", type=int, default=80)
-    parser.add_argument("--min_expression", type=int, default=40)
-    parser.add_argument("--max_expression", type=int, default=80)
-    parser.add_argument("--min_sustain", type=int, default=0)
-    parser.add_argument("--max_sustain", type=int, default=127)
+    parser.add_argument("--min_modulation", default=constants.UNKNOWN)
+    parser.add_argument("--max_modulation", default=constants.UNKNOWN)
+    parser.add_argument("--min_expression", default=constants.UNKNOWN)
+    parser.add_argument("--max_expression", default=constants.UNKNOWN)
+    parser.add_argument("--min_sustain", default=constants.UNKNOWN)
+    parser.add_argument("--max_sustain", default=constants.UNKNOWN)
     # Sampling
     parser.add_argument("--num_generate", type=int, help="생성 개수")
     parser.add_argument("--top_k", type=int, default=50)
