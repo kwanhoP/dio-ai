@@ -1,5 +1,7 @@
+import copy
 import math
 import math as m
+from typing import List
 
 import numpy as np
 import torch
@@ -366,3 +368,45 @@ class SmoothCrossEntropyLoss(_Loss):
 
     def cross_entropy_with_logits(self, p, q):
         return -torch.sum(p * (q - q.logsumexp(dim=-1, keepdim=True)), dim=-1)
+
+
+def beam_search(
+    sos_token: int,
+    pad_token: int,
+    encoded_meta: torch.tensor,
+    max_len: int,
+    models,
+    note_vocab_size: int,
+    beam_size: int,
+    temperature: int,
+) -> List:
+    note_in = torch.zeros((1, max_len), dtype=torch.long)
+    note_in[0][0] = sos_token
+    start = copy.deepcopy(note_in)
+    sequences = [[start, 1]]  # start token, score
+
+    for idx in range(max_len - 1):
+        res_cadidates: List[List[torch.tensor, float]] = []  # [[note_seq tensor, score]]
+        for sample in sequences:
+            inputs, score = sample
+            out = models(encoded_meta, inputs)
+            out = torch.div(out[0], temperature)
+            out = out.softmax(-1)
+            candidate_token = torch.argsort(out[idx], descending=True)[:note_vocab_size]
+
+            for token in candidate_token:
+                if token == pad_token:
+                    continue
+                tmp_inputs = copy.deepcopy(inputs)
+                tmp_score = copy.deepcopy(score)
+                new_score = tmp_score * -np.log(out[idx][token].detach())
+                tmp_inputs[0][idx + 1] = token
+                res = [tmp_inputs, new_score]
+                res_cadidates.append(res)
+        ordered = sorted(res_cadidates, key=lambda tup: tup[1])  # 점수 기준 정렬
+        sequences = ordered[:beam_size]
+        if sequences[0][0][0][idx + 1] == 1:
+            print("meet eos token")
+            return sequences[0][0][0][1 : idx + 2]  # sos token 빼고, eos token 까지 슬라이싱
+
+    return sequences[0][0][0][1:]  # sos token 빼고 끝까지 슬라이싱
