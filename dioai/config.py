@@ -7,7 +7,9 @@ from dataclasses import asdict, dataclass
 from pathlib import Path
 from typing import Any, Dict, Optional, Union
 
-from transformers import GPT2Config, PretrainedConfig, TrainingArguments
+from transformers import BartConfig, GPT2Config, PretrainedConfig, TrainingArguments
+
+from dioai.data.utils import NoiseArguments
 
 
 @dataclass
@@ -69,6 +71,7 @@ class TransformersConfig:
     chord_embedding_path: Optional[str] = None
     use_cosine_annealing: Optional[bool] = False
     fine_tune_ckpt: Optional[str] = None
+    extra_data_args: Optional[Any] = None
 
     @classmethod
     def from_file(
@@ -93,7 +96,11 @@ class TransformersConfig:
             logging_dir.mkdir(exist_ok=True, parents=True)
 
         data = expanduser_data(data)
-        model_config = GPT2Config(**data.pop("model"))
+        if "gpt2" in data["model_name"]:
+            model_config = GPT2Config(**data.pop("model"))
+        if "bart" in data["model_name"]:
+            model_config = BartConfig(**data.pop("model"))
+            data["extra_data_args"] = NoiseArguments(**data.pop("extra_data_args"))
 
         training_arguments_dict = data.pop("training")
         if training_arguments_dict.get("output_dir") is None:

@@ -7,6 +7,7 @@ from typing import Dict, List, Union
 import numpy as np
 import tensorflow as tf
 
+from dioai.data.utils import NoiseGenerator
 from dioai.preprocessor import utils
 
 
@@ -344,3 +345,106 @@ class TransformerDataset:
 
     def _filename(self, is_input: bool = True) -> str:
         return f"{self.input_filename if is_input else self.target_filename}_{self.split}.npy"
+
+
+class BartDenoisingNoteTFDataset:
+    npy_dir_name_prefix = "output_npy"
+    target_filename = "target"
+    output_signature = {
+        "input_ids": tf.TensorSpec(shape=(None,), dtype=tf.int64),
+        "attention_mask": tf.TensorSpec(shape=(None,), dtype=tf.int64),
+        "labels": tf.TensorSpec(shape=(None,), dtype=tf.int64),
+    }
+
+    def __init__(self, data_dir: Union[str, Path], split: str, noise_generator: NoiseGenerator):
+        self.data_dir = Path(data_dir)
+        self.split = split
+        self.noise_generator = noise_generator
+        self.bos_id = noise_generator.vocab.bos_index
+        self.eos_id = noise_generator.vocab.eos_index
+
+    def build(
+        self,
+        batch_size: int,
+        max_length: int,
+        training: bool = True,
+        shuffle: bool = False,
+        shuffle_buffer_size: int = 10000,
+        pad_id: int = 103,
+    ) -> tf.data.Dataset:
+        dataset = tf.data.Dataset.from_generator(
+            self._get_numpy_generator,
+            output_signature=self.output_signature,
+        )
+        dataset = dataset.filter(lambda x: tf.shape(x["input_ids"])[0] <= max_length)
+        dataset = dataset.filter(lambda x: tf.shape(x["labels"])[0] <= max_length)
+        dataset = dataset.padded_batch(
+            batch_size=batch_size,
+            padded_shapes={
+                "input_ids": [None],
+                "attention_mask": [None],
+                "labels": [None],
+            },
+            padding_values={
+                "input_ids": tf.constant(pad_id, dtype=tf.int64),
+                "attention_mask": tf.constant(0, dtype=tf.int64),
+                "labels": tf.constant(pad_id, dtype=tf.int64),
+            },
+        )
+        if shuffle:
+            dataset = dataset.shuffle(shuffle_buffer_size)
+        if training:
+            dataset = dataset.repeat()
+            dataset = dataset.shuffle(batch_size)
+        else:
+            dataset = dataset.shuffle(shuffle_buffer_size, seed=1203)
+            dataset = dataset.take(5000)
+            dataset = self._get_dataset_with_fixed_batch_size(dataset, batch_size)
+
+        dataset = dataset.prefetch(2)
+        return dataset
+
+    def _get_dataset_with_fixed_batch_size(
+        self, dataset: tf.data.Dataset, batch_size: int
+    ) -> tf.data.Dataset:
+        def _generator():
+            keys = self.output_signature.keys()
+            for batch in dataset.as_numpy_iterator():
+                # batch: Dict[str, np.ndarray]
+                if batch["input_ids"].shape[0] != batch_size:
+                    continue
+
+                for i in range(batch_size):
+                    yield {key: batch[key][i] for key in keys}
+
+        return tf.data.Dataset.from_generator(_generator, output_signature=self.output_signature)
+
+    def _get_numpy_generator(self):
+        def _prepare_input_w_special_tokens(_input: np.ndarray) -> np.ndarray:
+            if _input[-1] != self.eos_id:
+                _input = np.insert(_input, len(_input), self.eos_id)
+            if _input[0] != self.bos_id:
+                _input = np.insert(_input, 0, self.bos_id)
+            return _input
+
+        dataset_paths = list(self.data_dir.rglob("**/*"))
+        target_files = gather_files(dataset_paths, prefix=f"{self.target_filename}_{self.split}")
+        for target_file in target_files:
+            if self.npy_dir_name_prefix not in target_file:
+                continue
+
+            note_seqs = np.load(target_file, allow_pickle=True)
+            for note_seq in note_seqs:
+                fine_note_seq = copy.deepcopy(note_seq)
+                if len(note_seq) == 0:
+                    continue
+
+                note_seq = _prepare_input_w_special_tokens(_input=note_seq)
+                corrupted_note_seqs = self.noise_generator.on_dataset(dataset=list(note_seq))
+                corrupted_note_seq = corrupted_note_seqs[0].numpy()
+                attention_mask = compute_attention_mask(corrupted_note_seq)
+                yield {
+                    "input_ids": corrupted_note_seq,
+                    "attention_mask": attention_mask,
+                    "labels": fine_note_seq,
+                }

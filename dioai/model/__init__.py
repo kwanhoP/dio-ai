@@ -5,6 +5,7 @@ from typing import Optional, Union
 from transformers import PretrainedConfig
 
 from .model import (
+    BartDenoisingNoteModel,
     ConditionalRelativeTransformer,
     GP2MetaToNoteModel,
     GPT2BaseModel,
@@ -23,6 +24,7 @@ class PozalabsModelFactory:
         GP2MetaToNoteModel.name: GP2MetaToNoteModel,
         GPT2ChordMetaToNoteModel.name: GPT2ChordMetaToNoteModel,
         ConditionalRelativeTransformer.name: ConditionalRelativeTransformer,
+        BartDenoisingNoteModel.name: BartDenoisingNoteModel,
     }
 
     def create(
