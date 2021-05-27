@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import os
 import random
 from pathlib import Path
 from typing import Dict, Generator, Iterator, List, Union
@@ -123,53 +124,31 @@ def meta_to_note_collate_fn(batch: List[Dict[str, np.ndarray]]) -> Dict[str, tor
     }
 
 
-class RelativeTransformerDataset(torch.utils.data.Dataset):
-    """relative self attention을 사용하는 transformer dataset
-    music transformer와 다르게 인코더, 디코더 인풋이 다름(meta, note)
-
-    Args:
-        config: config.PytorchlightConfig
-    """
-
-    def __init__(self, config):
+class RelativeTransformerDataset(IterableDataset):
+    def __init__(self, config) -> None:
+        self.data_path = config.data_dir
         self.split = config.split
-        self.data_dir = config.data_dir
-        self.pad_token = config.pad_token_id
-        self.sos_token = config.sos_token_id
-        self.maxlen = config.n_ctx
-        self.num_meta = config.num_meta
-        self.data_generator = self.dataset_generator(self.data_dir)
-        self.meta, self.note, self.data_len = self._load_dataset(self.data_generator)
-        self.shifted_note = self._shifted_note(self.note, self.sos_token)
-        self.dec_input, self.dec_output, self.enc_input = self._padding(
-            self.shifted_note, self.note, self.meta, self.pad_token, self.maxlen, self.num_meta
-        )
-        self.total_data_len = config.max_steps * config.batch_size * config.n_gpu
+        self.config = config
 
-    def __len__(self):
-        return self.data_len
-
-    def __getitem__(self, idx):
-        if idx >= self.data_len:
-            pre_data_len = self.data_len
-            self.meta, self.note, self.data_len = self._load_dataset(self.data_generator)
-            self.data_len = self.data_len + pre_data_len
-            self.shifted_note = self._shifted_note(self.note, self.sos_token)
-            self.dec_input, self.dec_output, self.enc_input = self._padding(
-                self.shifted_note, self.note, self.meta, self.pad_token, self.maxlen, self.num_meta
+    def __iter__(self):
+        for pth in os.listdir(self.data_path):
+            meta, note = self._load_datasets(os.path.join(self.data_path, pth))
+            shifted_note = self._shifted_note(note, self.config.sos_token_id)
+            dec_input, dec_output, enc_input = self._padding(
+                shifted_note,
+                note,
+                meta,
+                self.config.pad_token_id,
+                self.config.n_ctx,
+                self.config.num_meta,
             )
-
-            return (
-                torch.tensor(self.enc_input[max(0, idx - self.data_len)]).long(),
-                torch.tensor(self.dec_input[max(0, idx - self.data_len)]).long(),
-                torch.tensor(self.dec_output[max(0, idx - self.data_len)]).long(),
-            )
-        else:
-            return (
-                torch.tensor(self.enc_input[idx]).long(),
-                torch.tensor(self.dec_input[idx]).long(),
-                torch.tensor(self.dec_output[idx]).long(),
-            )
+            data_len = len(dec_input)
+            for idx in range(data_len):
+                yield (
+                    torch.tensor(enc_input[idx]).long(),
+                    torch.tensor(dec_input[idx]).long(),
+                    torch.tensor(dec_output[idx]).long(),
+                )
 
     def _padding(
         self,
@@ -218,8 +197,8 @@ class RelativeTransformerDataset(torch.utils.data.Dataset):
             shifted.append(np.insert(sample, 0, sos_token))
         return np.array(shifted)
 
-    def dataset_generator(self, data_dir) -> Union[np.ndarray, np.ndarray]:
-        """여러 npy 파일에 나눠져있는 데이터를 하나씩 불러와 사용하기 위한 generator"""
+    def _load_datasets(self, data_dir) -> Union[np.ndarray, np.ndarray]:
+        """npy 파일에 나눠져있는 meta, note 데이터 load"""
 
         dataset_paths = list(Path(data_dir).rglob("**/*"))
 
@@ -231,12 +210,10 @@ class RelativeTransformerDataset(torch.utils.data.Dataset):
         for (meta_train_path, note_train_path) in dataset_files_pair:
             meta_features = np.load(meta_train_path, allow_pickle=True)
             note_features = np.load(note_train_path, allow_pickle=True)
-            yield meta_features, note_features
+            return meta_features, note_features
 
-    def _load_dataset(self, data_generator):
-        meta, note = next(data_generator)
+            
 
-        return meta, note, len(meta)
 
 
 class BartDenoisingNoteDataset(BaseDataset):
@@ -292,3 +269,4 @@ class BartDenoisingNoteDataset(BaseDataset):
             args=noise_args,
         )
         return noise_generator
+

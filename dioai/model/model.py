@@ -318,7 +318,7 @@ class ConditionalRelativeTransformer(pl.LightningModule):
     def train_dataloader(self):
         train_dataset = RelativeTransformerDataset(self.config)
         train_loader = torch.utils.data.DataLoader(
-            train_dataset, self.batch_size, shuffle=False, num_workers=10
+            train_dataset, self.batch_size, shuffle=False, num_workers=1
         )
         return train_loader
 
