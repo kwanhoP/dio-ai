@@ -17,6 +17,7 @@ from dioai.data.utils.constants import META_OFFSET, NOTE_SEQ_COMPONENTS
 
 from .tf_dataset import (
     BartDenoisingNoteTFDataset,
+    BertForDPRTFDataset,
     GPT2ChordMetaToNoteTFDataset,
     TransformerDataset,
     gather_files,
@@ -268,91 +269,25 @@ class BartDenoisingNoteDataset(BaseDataset):
         return noise_generator
 
 
-class BERTDataset(IterableDataset):
-    def __init__(self, config, switch: str) -> None:
-        """
-        switch: bert 모델은 meta, note 각각 따로 모델을 만들어야 하므로 두 데이터를 switch 하는 parameter
-        """
-        self.data_path = config.data_dir
-        self.split = config.split
-        self.model_config = config.model
-        self.switch = switch
-        self.sos_id = 638
-        self.mask_id = 639
+class BertForDPRDataset(BaseDataset):
+    name = "bert_for_dpr_hf"
 
-    def __iter__(self):
-        for pth in os.listdir(self.data_path):
-            if self.switch == "note":
-                _, data = self._load_datasets(os.path.join(self.data_path, pth))
-            else:
-                data, _ = self._load_datasets(os.path.join(self.data_path, pth))
-            for idx in range(len(data)):
-                data_random, data_label = self.random_word(data[idx])
+    def __init__(
+        self,
+        config: TransformersConfig,
+        split: str,
+        switch: str,
+        training: bool = True,
+        shuffle: bool = False,
+    ):
+        super().__init__(config=config, training=training, shuffle=shuffle)
+        self.tf_dataset = BertForDPRTFDataset(
+            self.config.data_dir,
+            split=split,
+            switch=switch,
+        )
 
-                # [CLS] tag = SOS tag
-                data_random = [self.sos_id] + data_random
-                data_label = [self.model_config.pad_token_id] + data_label
-
-                # padding
-                bert_input = pad_sequences(
-                    data_random,
-                    maxlen=self.model_config.n_ctx,
-                    padding="post",
-                    value=self.model_config.pad_token_id,
-                )
-                bert_label = pad_sequences(
-                    data_label,
-                    maxlen=self.model_config.n_ctx,
-                    padding="post",
-                    value=self.model_config.pad_token_id,
-                )
-
-                output = {"bert_input": bert_input, "bert_label": bert_label}
-
-                yield {key: torch.tensor(value) for key, value in output.items()}
-
-    def random_word(self, datas, masking_rate=0.15):
-        output_label = []
-        NOTE_START = 2
-        NOTE_END = 421
-        META_START = 422
-        META_END = 637
-        for i, token in enumerate(datas):
-            prob = random.random()
-            if prob < masking_rate:
-                prob /= masking_rate
-
-                # 80% randomly change token to mask token
-                if prob < 0.8:
-                    datas[i] = self.mask_id
-
-                # 10% randomly change token to random token
-                elif prob < 0.9:
-                    if len(datas) <= self.config.num_meta:
-                        datas[i] = random.randrange(META_START, META_END)
-                    else:
-                        datas[i] = random.randrange(NOTE_START, NOTE_END)
-
-                # 10% randomly change token to current token
-                else:
-                    pass
-                output_label.append(token)
-            else:
-                datas[i] = token
-                output_label.append(0)
-        return datas, output_label
-
-    def _load_datasets(self, data_dir) -> Union[np.ndarray, np.ndarray]:
-        """npy 파일에 나눠져있는 meta, note 데이터 load"""
-
-        dataset_paths = list(Path(data_dir).rglob("**/*"))
-
-        input_train_files = gather_files(dataset_paths, prefix=f"input_{self.split}")
-        target_train_files = gather_files(dataset_paths, prefix=f"target_{self.split}")
-
-        dataset_files_pair = list(zip(input_train_files, target_train_files))
-        random.shuffle(dataset_files_pair)
-        for (meta_train_path, note_train_path) in dataset_files_pair:
-            meta_features = np.load(meta_train_path, allow_pickle=True)
-            note_features = np.load(note_train_path, allow_pickle=True)
-            return meta_features, note_features
+    def prepare_dataset(self) -> Iterator:
+        tf_dataset = self.tf_dataset.build(**self.tf_dataset_build_args)
+        for batch in tf_dataset.as_numpy_iterator():
+            yield batch

@@ -8,6 +8,8 @@ from torch.nn import CrossEntropyLoss
 from transformers import (
     BartConfig,
     BartForConditionalGeneration,
+    BertConfig,
+    BertForMaskedLM,
     GPT2Config,
     GPT2LMHeadModel,
     PretrainedConfig,
@@ -17,8 +19,13 @@ from transformers.file_utils import (
     add_start_docstrings,
     add_start_docstrings_to_model_forward,
 )
-from transformers.modeling_outputs import CausalLMOutputWithCrossAttentions, Seq2SeqLMOutput
+from transformers.modeling_outputs import (
+    CausalLMOutputWithCrossAttentions,
+    MaskedLMOutput,
+    Seq2SeqLMOutput,
+)
 from transformers.models.bart.modeling_bart import shift_tokens_right
+from transformers.models.bert.modeling_bert import BertModel
 from transformers.models.gpt2.modeling_gpt2 import (
     DEPARALLELIZE_DOCSTRING,
     GPT2_INPUTS_DOCSTRING,
@@ -392,4 +399,65 @@ class BartDenoisingNoteModel(BartForConditionalGeneration):
             encoder_last_hidden_state=outputs.encoder_last_hidden_state,
             encoder_hidden_states=outputs.encoder_hidden_states,
             encoder_attentions=outputs.encoder_attentions,
+        )
+
+
+class BertForDPR(BertForMaskedLM):
+    name = "bert_for_dpr_hf"
+
+    def __init__(self, config: Union[PretrainedConfig, BertConfig]):
+        super().__init__(config)
+        # for DPR, take the representation at the [CLS] token as the output
+        self.bert = BertModel(config, add_pooling_layer=True)
+
+    def forward(
+        self,
+        input_ids=None,
+        attention_mask=None,
+        token_type_ids=None,
+        position_ids=None,
+        head_mask=None,
+        inputs_embeds=None,
+        encoder_hidden_states=None,
+        encoder_attention_mask=None,
+        labels=None,
+        output_attentions=None,
+        output_hidden_states=None,
+        return_dict=None,
+    ):
+        return_dict = return_dict if return_dict is not None else self.config.use_return_dict
+
+        outputs = self.bert(
+            input_ids,
+            attention_mask=attention_mask,
+            token_type_ids=token_type_ids,
+            position_ids=position_ids,
+            head_mask=head_mask,
+            inputs_embeds=inputs_embeds,
+            encoder_hidden_states=encoder_hidden_states,
+            encoder_attention_mask=encoder_attention_mask,
+            output_attentions=output_attentions,
+            output_hidden_states=output_hidden_states,
+            return_dict=return_dict,
+        )
+
+        sequence_output = outputs[0]
+        prediction_scores = self.cls(sequence_output)
+
+        masked_lm_loss = None
+        if labels is not None:
+            loss_fct = CrossEntropyLoss(ignore_index=self.config.pad_token_id)
+            masked_lm_loss = loss_fct(
+                prediction_scores.view(-1, self.config.vocab_size), labels.view(-1)
+            )
+
+        if not return_dict:
+            output = (prediction_scores,) + outputs[2:]
+            return ((masked_lm_loss,) + output) if masked_lm_loss is not None else output
+
+        return MaskedLMOutput(
+            loss=masked_lm_loss,
+            logits=prediction_scores,
+            hidden_states=outputs.hidden_states,
+            attentions=outputs.attentions,
         )

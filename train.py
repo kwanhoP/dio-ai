@@ -80,10 +80,16 @@ def main_hf(args):
     trainer: transformers.Trainer = Trainer_hf(
         model=model_factory.create(config.model_name, config.model),
         args=config.training,
-        train_dataset=dataset_factory.create(config=config, split=config.train_split),
+        train_dataset=dataset_factory.create(
+            config=config, split=config.train_split, switch=config.switch
+        ),
         eval_dataset=(
             dataset_factory.create(
-                config=config, split=config.eval_split, training=False, shuffle=False
+                config=config,
+                split=config.eval_split,
+                switch=config.switch,
+                training=False,
+                shuffle=False,
             )
             if config.training.evaluation_strategy != transformers.EvaluationStrategy.NO
             else None

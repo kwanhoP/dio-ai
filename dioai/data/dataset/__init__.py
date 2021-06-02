@@ -5,6 +5,7 @@ from dioai.config import TransformersConfig
 
 from .dataset import (
     BartDenoisingNoteDataset,
+    BertForDPRDataset,
     GPT2ChordMetaToNoteDataset,
     Seq2SeqDataset,
     meta_to_note_collate_fn,
@@ -16,6 +17,7 @@ class PozalabsDatasetFactory:
         GPT2ChordMetaToNoteDataset.name: GPT2ChordMetaToNoteDataset,
         Seq2SeqDataset.name: Seq2SeqDataset,
         BartDenoisingNoteDataset.name: BartDenoisingNoteDataset,
+        BertForDPRDataset.name: BertForDPRDataset,
     }
 
     def create(self, config: TransformersConfig, *args, **kwargs):

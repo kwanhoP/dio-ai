@@ -8,6 +8,7 @@ import numpy as np
 import tensorflow as tf
 
 from dioai.data.utils import NoiseGenerator
+from dioai.data.utils.constants import BertVocab
 from dioai.preprocessor import utils
 
 
@@ -447,4 +448,147 @@ class BartDenoisingNoteTFDataset:
                     "input_ids": corrupted_note_seq,
                     "attention_mask": attention_mask,
                     "labels": fine_note_seq,
+                }
+
+
+class BertForDPRTFDataset:
+    npy_dir_name_prefix = "output_npy"
+    target_filename = "target"
+    output_signature = {
+        "input_ids": tf.TensorSpec(shape=(None,), dtype=tf.int64),
+        "attention_mask": tf.TensorSpec(shape=(None,), dtype=tf.int64),
+        "labels": tf.TensorSpec(shape=(None,), dtype=tf.int64),
+    }
+
+    def __init__(self, data_dir: Union[str, Path], split: str, switch: str):
+        self.data_dir = Path(data_dir)
+        self.split = split
+        self.switch = switch
+        self.pad_id = BertVocab.NOTE_VOCAB["pad_id"]
+        if switch == "note":
+            self.sos_id = BertVocab.NOTE_VOCAB["sos_id"]
+            self.mask_id = BertVocab.NOTE_VOCAB["mask_id"]
+        else:
+            self.sos_id = BertVocab.META_VOCAB["sos_id"]
+            self.mask_id = BertVocab.NOTE_VOCAB["mask_id"]
+
+    def build(
+        self,
+        batch_size: int,
+        max_length: int,
+        training: bool = True,
+        shuffle: bool = False,
+        shuffle_buffer_size: int = 10000,
+        pad_id: int = 0,
+    ) -> tf.data.Dataset:
+        dataset = tf.data.Dataset.from_generator(
+            self._get_numpy_generator,
+            output_signature=self.output_signature,
+        )
+        dataset = dataset.filter(lambda x: tf.shape(x["input_ids"])[0] <= max_length)
+        dataset = dataset.filter(lambda x: tf.shape(x["labels"])[0] <= max_length)
+        dataset = dataset.padded_batch(
+            batch_size=batch_size,
+            padded_shapes={
+                "input_ids": [None],
+                "attention_mask": [None],
+                "labels": [None],
+            },
+            padding_values={
+                "input_ids": tf.constant(pad_id, dtype=tf.int64),
+                "attention_mask": tf.constant(0, dtype=tf.int64),
+                "labels": tf.constant(pad_id, dtype=tf.int64),
+            },
+        )
+        if shuffle:
+            dataset = dataset.shuffle(shuffle_buffer_size)
+        if training:
+            dataset = dataset.repeat()
+            dataset = dataset.shuffle(batch_size)
+        else:
+            dataset = dataset.shuffle(shuffle_buffer_size, seed=1203)
+            dataset = dataset.take(5000)
+            dataset = self._get_dataset_with_fixed_batch_size(dataset, batch_size)
+
+        dataset = dataset.prefetch(2)
+        return dataset
+
+    def _get_dataset_with_fixed_batch_size(
+        self, dataset: tf.data.Dataset, batch_size: int
+    ) -> tf.data.Dataset:
+        def _generator():
+            keys = self.output_signature.keys()
+            for batch in dataset.as_numpy_iterator():
+                # batch: Dict[str, np.ndarray]
+                if batch["input_ids"].shape[0] != batch_size:
+                    continue
+
+                for i in range(batch_size):
+                    yield {key: batch[key][i] for key in keys}
+
+        return tf.data.Dataset.from_generator(_generator, output_signature=self.output_signature)
+
+    def _masking_seq(self, datas: np.ndarray, masking_rate=0.15) -> Union[np.ndarray, np.ndarray]:
+        output_label = []
+        NOTE_START = 4
+        NOTE_END = 423
+        META_START = 3
+        META_END = 218
+        for i, token in enumerate(datas):
+            prob = random.random()
+            if prob < masking_rate:
+                prob /= masking_rate
+
+                # 80% randomly change token to mask token
+                if prob < 0.8:
+                    datas[i] = self.mask_id
+
+                # 10% randomly change token to random token
+                elif prob < 0.9:
+                    if self.switch == "meta":
+                        datas[i] = random.randrange(META_START, META_END + 1)
+                    else:
+                        datas[i] = random.randrange(NOTE_START, NOTE_END + 1)
+
+                # 10% randomly change token to current token
+                else:
+                    pass
+                output_label.append(token)
+            else:
+                datas[i] = token
+                output_label.append(self.pad_id)
+        return datas, output_label
+
+    def _get_numpy_generator(self):
+
+        dataset_paths = list(self.data_dir.rglob("**/*"))
+        input_train_files = gather_files(dataset_paths, prefix=f"input_{self.split}")
+        target_train_files = gather_files(dataset_paths, prefix=f"target_{self.split}")
+
+        dataset_files_pair = list(zip(input_train_files, target_train_files))
+        random.shuffle(dataset_files_pair)
+        for (meta_train_path, note_train_path) in dataset_files_pair:
+            meta_features = np.load(meta_train_path, allow_pickle=True)
+            note_features = np.load(note_train_path, allow_pickle=True)
+            sequences = note_features if self.switch == "note" else meta_features
+
+            for seq in sequences:
+                if self.switch == "meta":
+                    seq = seq[:-1] - BertVocab.META_VOCAB["meta_seq_shift"]
+                else:
+                    seq = seq[:-1] + BertVocab.NOTE_VOCAB["note_seq_shift"]
+                    np.append(seq, BertVocab.NOTE_VOCAB["eos_id"])
+                data_masked, data_label = self._masking_seq(seq)
+                if len(data_masked) == 0:
+                    continue
+
+                # [CLS] tag = SOS tag
+                data_masked = np.insert(data_masked, 0, self.sos_id)
+                data_label = np.insert(data_label, 0, self.pad_id)
+
+                attention_mask = compute_attention_mask(data_masked)
+                yield {
+                    "input_ids": data_masked,
+                    "attention_mask": attention_mask,
+                    "labels": data_label,
                 }

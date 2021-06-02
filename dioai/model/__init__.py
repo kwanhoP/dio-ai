@@ -6,6 +6,7 @@ from transformers import PretrainedConfig
 
 from .model import (
     BartDenoisingNoteModel,
+    BertForDPR,
     ConditionalRelativeTransformer,
     GP2MetaToNoteModel,
     GPT2BaseModel,
@@ -25,6 +26,7 @@ class PozalabsModelFactory:
         GPT2ChordMetaToNoteModel.name: GPT2ChordMetaToNoteModel,
         ConditionalRelativeTransformer.name: ConditionalRelativeTransformer,
         BartDenoisingNoteModel.name: BartDenoisingNoteModel,
+        BertForDPR.name: BertForDPR,
     }
 
     def create(
