@@ -2,8 +2,9 @@ from dataclasses import dataclass
 from typing import Dict, List, Optional
 
 import fairseq
+import numpy as np
 import torch
-from fairseq.data import DenoisingDataset
+from fairseq.data import DenoisingDataset, data_utils
 
 from dioai.data.utils.constants import NOTE_SEQ_OFFSET
 
@@ -67,5 +68,29 @@ class NoiseGenerator(DenoisingDataset):
         return self
 
     def __getitem__(self, index):
-        result = super().__getitem__(index)
-        return result.get("source")
+        with data_utils.numpy_seed(self.seed, self.epoch, index):
+            tokens = self.dataset[index]
+            assert tokens[-1] == self.eos
+            source, target = tokens, tokens.clone()
+
+            if self.permute_sentence_ratio > 0.0:
+                source = self.permute_sentences(source, self.permute_sentence_ratio)
+
+            if self.insert_ratio > 0:
+                source = self.add_insertion_noise(source, self.insert_ratio)
+
+            if self.mask_ratio > 0:
+                source = self.add_whole_word_mask(source, self.mask_ratio)
+
+            if self.rotate_ratio > 0.0 and np.random.random() < self.rotate_ratio:
+                source = self.add_rolling_noise(source)
+        # there can additional changes to make:
+        if self.item_transform_func is not None:
+            source, target = self.item_transform_func(source, target)
+
+        assert (source >= 0).all()
+        assert (source[1:-1] >= 1).all()
+        assert (source <= len(self.vocab)).all()
+        assert source[0] == self.vocab.bos()
+        assert source[-1] == self.eos
+        return source
