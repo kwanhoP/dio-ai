@@ -18,3 +18,12 @@ class BertVocab:
     NOTE_VOCAB = {"pad_id": 0, "eos_id": 1, "sos_id": 2, "mask_id": 3, "note_seq_shift": 2}
 
     META_VOCAB = {"pad_id": 0, "sos_id": 1, "mask_id": 2, "meta_seq_shift": 419}
+
+
+@dataclass
+class DPRVocab:
+    pad_id = 0
+    eos_id = 1
+    sos_id = 2
+    note_shift = 1
+    meta_shift = 419

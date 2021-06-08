@@ -10,6 +10,7 @@ import torch
 from fairseq.data.encoders.utils import get_whole_word_mask
 from tensorflow.keras.preprocessing.sequence import pad_sequences
 from torch.utils.data import Dataset, IterableDataset
+from transformers.models.dpr.configuration_dpr import DPRConfig
 
 from dioai.config import TransformersConfig
 from dioai.data.utils import NoiseArguments, NoiseGenerator, NoteDictionary
@@ -18,6 +19,7 @@ from dioai.data.utils.constants import META_OFFSET, NOTE_SEQ_COMPONENTS
 from .tf_dataset import (
     BartDenoisingNoteTFDataset,
     BertForDPRTFDataset,
+    DPRTFDataset,
     GPT2ChordMetaToNoteTFDataset,
     TransformerDataset,
     gather_files,
@@ -285,6 +287,36 @@ class BertForDPRDataset(BaseDataset):
             self.config.data_dir,
             split=split,
             switch=switch,
+        )
+
+    def prepare_dataset(self) -> Iterator:
+        tf_dataset = self.tf_dataset.build(**self.tf_dataset_build_args)
+        for batch in tf_dataset.as_numpy_iterator():
+            yield batch
+
+
+class DPRDataset(BaseDataset):
+    name = "dpr_model_hf"
+
+    def __init__(
+        self,
+        config: Union[TransformersConfig, DPRConfig],
+        split: str,
+        training: bool = True,
+        shuffle: bool = False,
+    ):
+        self.config = config
+        self.training = training
+        self.tf_dataset_build_args = dict(
+            batch_size=self.config.batch_size,
+            max_length=self.config.model.model_ctx["max_position_embeddings"],
+            pad_id=self.config.model.model_ctx["pad_token_id"],
+            training=training,
+            shuffle=shuffle,
+        )
+        self.tf_dataset = DPRTFDataset(
+            self.config.data_dir,
+            split=split,
         )
 
     def prepare_dataset(self) -> Iterator:

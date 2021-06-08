@@ -8,7 +8,7 @@ import numpy as np
 import tensorflow as tf
 
 from dioai.data.utils import NoiseGenerator
-from dioai.data.utils.constants import BertVocab
+from dioai.data.utils.constants import BertVocab, DPRVocab
 from dioai.preprocessor import utils
 
 
@@ -591,4 +591,88 @@ class BertForDPRTFDataset:
                     "input_ids": data_masked,
                     "attention_mask": attention_mask,
                     "labels": data_label,
+                }
+
+
+class DPRTFDataset:
+    output_signature = {
+        "input_ids": tf.TensorSpec(shape=(None,), dtype=tf.int64),
+    }
+
+    def __init__(self, data_dir: Union[str, Path], split: str):
+        self.data_dir = Path(data_dir)
+        self.split = split
+
+    def build(
+        self,
+        batch_size: int,
+        max_length: int,
+        training: bool = True,
+        shuffle: bool = False,
+        shuffle_buffer_size: int = 10000,
+        pad_id: int = 0,
+    ) -> tf.data.Dataset:
+        dataset = tf.data.Dataset.from_generator(
+            self._get_numpy_generator,
+            output_signature=self.output_signature,
+        )
+        dataset = dataset.filter(lambda x: tf.shape(x["input_ids"])[0] <= max_length)
+        dataset = dataset.padded_batch(
+            batch_size=batch_size,
+            padded_shapes={
+                "input_ids": [None],
+            },
+            padding_values={
+                "input_ids": tf.constant(pad_id, dtype=tf.int64),
+            },
+        )
+        if shuffle:
+            dataset = dataset.shuffle(shuffle_buffer_size)
+        if training:
+            dataset = dataset.repeat()
+            dataset = dataset.shuffle(batch_size)
+        else:
+            dataset = dataset.shuffle(shuffle_buffer_size, seed=1203)
+            dataset = dataset.take(5000)
+            dataset = self._get_dataset_with_fixed_batch_size(dataset, batch_size)
+
+        dataset = dataset.prefetch(2)
+        return dataset
+
+    def _get_dataset_with_fixed_batch_size(
+        self, dataset: tf.data.Dataset, batch_size: int
+    ) -> tf.data.Dataset:
+        def _generator():
+            keys = self.output_signature.keys()
+            for batch in dataset.as_numpy_iterator():
+                # batch: Dict[str, np.ndarray]
+                if batch["input_ids"].shape[0] != batch_size:
+                    continue
+
+                for i in range(batch_size):
+                    yield {key: batch[key][i] for key in keys}
+
+        return tf.data.Dataset.from_generator(_generator, output_signature=self.output_signature)
+
+    def _get_numpy_generator(self):
+        dataset_paths = list(self.data_dir.rglob("**/*"))
+        input_train_files = gather_files(dataset_paths, prefix=f"input_{self.split}")
+        target_train_files = gather_files(dataset_paths, prefix=f"target_{self.split}")
+
+        dataset_files_pair = list(zip(input_train_files, target_train_files))
+        random.shuffle(dataset_files_pair)
+
+        for (input_train_path, target_train_path) in dataset_files_pair:
+            input_features = np.load(input_train_path, allow_pickle=True)
+            target_features = np.load(target_train_path, allow_pickle=True)
+            for input_feature, target_feature in zip(input_features, target_features):
+                input_ids, _ = input_feature[:-1], input_feature[-1]
+                input_ids = input_ids - DPRVocab.meta_shift
+                input_ids = np.insert(input_ids, 0, DPRVocab.sos_id)
+                target_feature = np.insert(target_feature, 0, DPRVocab.eos_id)
+                target_feature = target_feature[:-1] + DPRVocab.note_shift
+                np.append(target_feature, DPRVocab.eos_id)
+                input_ids = np.concatenate([input_ids, target_feature])
+                yield {
+                    "input_ids": input_ids,
                 }

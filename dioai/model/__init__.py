@@ -8,6 +8,7 @@ from .model import (
     BartDenoisingNoteModel,
     BertForDPR,
     ConditionalRelativeTransformer,
+    DPRModel,
     GP2MetaToNoteModel,
     GPT2BaseModel,
     GPT2ChordMetaToNoteModel,
@@ -27,6 +28,7 @@ class PozalabsModelFactory:
         ConditionalRelativeTransformer.name: ConditionalRelativeTransformer,
         BartDenoisingNoteModel.name: BartDenoisingNoteModel,
         BertForDPR.name: BertForDPR,
+        DPRModel.name: DPRModel,
     }
 
     def create(

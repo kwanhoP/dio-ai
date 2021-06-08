@@ -4,6 +4,7 @@ import numpy as np
 import pytorch_lightning as pl
 import torch
 import torch.nn as nn
+import torch.nn.functional as F
 from torch.nn import CrossEntropyLoss
 from transformers import (
     BartConfig,
@@ -24,8 +25,11 @@ from transformers.modeling_outputs import (
     MaskedLMOutput,
     Seq2SeqLMOutput,
 )
+from transformers.modeling_utils import PreTrainedModel
 from transformers.models.bart.modeling_bart import shift_tokens_right
 from transformers.models.bert.modeling_bert import BertModel
+from transformers.models.dpr.configuration_dpr import DPRConfig
+from transformers.models.dpr.modeling_dpr import DPRContextEncoder, DPRQuestionEncoder
 from transformers.models.gpt2.modeling_gpt2 import (
     DEPARALLELIZE_DOCSTRING,
     GPT2_INPUTS_DOCSTRING,
@@ -36,8 +40,18 @@ from transformers.models.gpt2.modeling_gpt2 import (
 from transformers.utils.model_parallel_utils import assert_device_map, get_device_map
 
 from dioai.data.dataset.dataset import RelativeTransformerDataset
-from dioai.model.layer import Decoder, Encoder, SmoothCrossEntropyLoss, get_masked_with_pad_tensor
+
+# from dioai.model import PozalabsModelFactory
+from dioai.model.layer import (
+    Decoder,
+    DPROutput,
+    Encoder,
+    SmoothCrossEntropyLoss,
+    get_masked_with_pad_tensor,
+)
 from dioai.preprocessor.encoder.meta import Offset
+
+# from ...train import load_config
 
 
 class GPT2BaseModel(GPT2LMHeadModel):
@@ -461,3 +475,64 @@ class BertForDPR(BertForMaskedLM):
             hidden_states=outputs.hidden_states,
             attentions=outputs.attentions,
         )
+
+
+class DPRModel(PreTrainedModel):
+    name = "dpr_model_hf"
+    _keys_to_ignore_on_load_missing = [r"position_ids"]
+
+    def init_weights(self):
+        self.dpr_note_encoder.ctx_encoder.init_weights()
+        self.dpr_meta_encoder.question_encoder.init_weights()
+
+    def __init__(self, config: Union[PretrainedConfig, DPRConfig]):
+        super().__init__(config)
+        self.config = config
+        self.dpr_note_encoder = DPRContextEncoder(DPRConfig(**config.model_ctx))
+        self.dpr_meta_encoder = DPRQuestionEncoder(DPRConfig(**config.model_question))
+        self.init_weights()
+
+    def forward(
+        self,
+        input_ids=None,
+        attention_mask=None,
+        token_type_ids=None,
+        inputs_embeds=None,
+        output_attentions=None,
+        output_hidden_states=None,
+        return_dict=None,
+    ):
+
+        meta = input_ids[:, :19]
+        note = input_ids[:, 19:]
+        note_out = self.dpr_note_encoder(
+            input_ids=note,
+            attention_mask=attention_mask,
+            token_type_ids=token_type_ids,
+            inputs_embeds=inputs_embeds,
+            output_attentions=output_attentions,
+            output_hidden_states=output_hidden_states,
+            return_dict=return_dict,
+        )
+        meta_out = self.dpr_meta_encoder(
+            input_ids=meta,
+            attention_mask=attention_mask,
+            token_type_ids=token_type_ids,
+            inputs_embeds=inputs_embeds,
+            output_attentions=output_attentions,
+            output_hidden_states=output_hidden_states,
+            return_dict=return_dict,
+        )
+
+        note_emb = note_out.pooler_output
+        meta_emb = meta_out.pooler_output
+
+        sim = torch.matmul(meta_emb, note_emb.T)
+        softmax_scores = F.log_softmax(sim, dim=1)
+        loss = F.nll_loss(
+            softmax_scores,
+            torch.arange(0, softmax_scores.size(0)).long().to(softmax_scores.device),
+            reduction="mean",
+        )
+
+        return DPROutput(loss=loss)

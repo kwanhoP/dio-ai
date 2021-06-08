@@ -7,6 +7,7 @@ import numpy as np
 import torch
 import torch.nn.functional as F
 from torch.nn.modules.loss import _Loss
+from transformers.file_utils import ModelOutput
 
 
 def get_masked_with_pad_tensor(size, src, trg, pad_token):
@@ -410,3 +411,7 @@ def beam_search(
             return sequences[0][0][0][1 : idx + 2]  # sos token 빼고, eos token 까지 슬라이싱
 
     return sequences[0][0][0][1:]  # sos token 빼고 끝까지 슬라이싱
+
+
+class DPROutput(ModelOutput):
+    loss: torch.FloatTensor = None

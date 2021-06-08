@@ -8,6 +8,7 @@ from pathlib import Path
 from typing import Any, Dict, Optional, Union
 
 from transformers import BartConfig, BertConfig, GPT2Config, PretrainedConfig, TrainingArguments
+from transformers.models.dpr.configuration_dpr import DPRConfig
 
 from dioai.data.utils import NoiseArguments
 
@@ -72,7 +73,6 @@ class TransformersConfig:
     use_cosine_annealing: Optional[bool] = False
     fine_tune_ckpt: Optional[str] = None
     extra_data_args: Optional[Any] = None
-    switch: Optional[str] = None
 
     @classmethod
     def from_file(
@@ -104,6 +104,8 @@ class TransformersConfig:
             data["extra_data_args"] = NoiseArguments(**data.pop("extra_data_args"))
         if "bert" in data["model_name"]:
             model_config = BertConfig(**data.pop("model"))
+        if "dpr" in data["model_name"]:
+            model_config = DPRConfig(**data.pop("model"))
         training_arguments_dict = data.pop("training")
         if training_arguments_dict.get("output_dir") is None:
             training_arguments_dict.update(
