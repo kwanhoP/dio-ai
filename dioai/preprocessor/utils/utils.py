@@ -748,14 +748,16 @@ def augment_by_key(midi_path: str, augmented_tmp_dir: str, key_change: int, data
     midi = pretty_midi.PrettyMIDI(midi_path)
     if data == "pozalabs" and len(midi.instruments) == 1:  # drum track
         return None
-    midi_id = Path(midi_path).parts[-1].split(".")[0]
-    main_notes = midi.instruments[0].notes
-    origin_key = int(midi.key_signature_changes[0].key_number)
+    midi_id = Path(midi_path).stem
 
-    try:
-        track_offset = midi.instruments[1].notes[0].start
-    except IndexError:
-        track_offset = midi.instruments[0].notes[0].start
+    for idx, instrument in enumerate(midi.instruments):
+        if instrument.name != constants.CHORD_TRACK_NAME:
+            pitch_track_idx = idx
+        else:
+            chord_track_idx = idx
+    pitch_track_notes = midi.instruments[pitch_track_idx].notes
+    origin_key = int(midi.key_signature_changes[0].key_number)
+    track_offset = midi.instruments[chord_track_idx].notes[0].start
 
     if origin_key < MINOR_KEY_OFFSET:
         try:
@@ -776,13 +778,13 @@ def augment_by_key(midi_path: str, augmented_tmp_dir: str, key_change: int, data
     new_key_number = midi.key_signature_changes[0].key_number
     new_key = pretty_midi.key_number_to_key_name(new_key_number).lower().replace(" ", "")
 
-    for note in main_notes:
+    for note in pitch_track_notes:
         note.pitch = note.pitch + key_change
         note.start = note.start - track_offset
         note.end = note.end - track_offset
 
     if data == "pozalabs":
-        midi.instruments.pop()
+        midi.instruments.pop(chord_track_idx)
     try:
         midi.write(os.path.join(augmented_tmp_dir, midi_id + f"_{new_key}.mid"))
     except (AttributeError, ValueError):
