@@ -26,4 +26,4 @@ class DPRVocab:
     eos_id = 1
     sos_id = 2
     note_shift = 1
-    meta_shift = 419
+    meta_shift = 420

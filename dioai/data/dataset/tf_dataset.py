@@ -668,9 +668,8 @@ class DPRTFDataset:
             for input_feature, target_feature in zip(input_features, target_features):
                 input_ids, _ = input_feature[:-1], input_feature[-1]
                 input_ids = input_ids - DPRVocab.meta_shift
-                input_ids = np.insert(input_ids, 0, DPRVocab.sos_id)
-                target_feature = np.insert(target_feature, 0, DPRVocab.eos_id)
-                target_feature = target_feature[:-1] + DPRVocab.note_shift
+                input_ids = np.insert(input_ids, 0, DPRVocab.eos_id)
+                target_feature = np.insert(target_feature, 0, DPRVocab.sos_id)
                 np.append(target_feature, DPRVocab.eos_id)
                 input_ids = np.concatenate([input_ids, target_feature])
                 yield {

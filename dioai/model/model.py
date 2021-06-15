@@ -477,13 +477,18 @@ class BertForDPR(BertForMaskedLM):
         )
 
 
-class DPRModel(PreTrainedModel):
-    name = "dpr_model_hf"
+class DPRPretrainedModel(PreTrainedModel):
+    config_class = DPRConfig
+    load_tf_weights = None
+    base_model_prefix = "ctx_encoder"
     _keys_to_ignore_on_load_missing = [r"position_ids"]
 
-    def init_weights(self):
-        self.dpr_note_encoder.ctx_encoder.init_weights()
-        self.dpr_meta_encoder.question_encoder.init_weights()
+
+class DPRModel(DPRPretrainedModel):
+    name = "dpr_model_hf"
+
+    _keys_to_ignore_on_load_missing = [r"position_ids"]
+    load_tf_weights = None
 
     def __init__(self, config: Union[PretrainedConfig, DPRConfig]):
         super().__init__(config)
@@ -491,6 +496,10 @@ class DPRModel(PreTrainedModel):
         self.dpr_note_encoder = DPRContextEncoder(DPRConfig(**config.model_ctx))
         self.dpr_meta_encoder = DPRQuestionEncoder(DPRConfig(**config.model_question))
         self.init_weights()
+
+    def init_weights(self):
+        self.dpr_note_encoder.ctx_encoder.init_weights()
+        self.dpr_meta_encoder.question_encoder.init_weights()
 
     def forward(
         self,
@@ -528,10 +537,12 @@ class DPRModel(PreTrainedModel):
         meta_emb = meta_out.pooler_output
 
         sim = torch.matmul(meta_emb, note_emb.T)
+        sim = sim.view(meta_emb.size(0), -1)
         softmax_scores = F.log_softmax(sim, dim=1)
+        target = torch.arange(0, softmax_scores.size(0)).long().to(softmax_scores.device)
         loss = F.nll_loss(
             softmax_scores,
-            torch.arange(0, softmax_scores.size(0)).long().to(softmax_scores.device),
+            target,
             reduction="mean",
         )
 

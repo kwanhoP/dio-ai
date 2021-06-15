@@ -69,7 +69,7 @@ def main_hf(args):
         "https://11345898b114459fb6eb068986b66eea@o226139.ingest.sentry.io/5690046",
         traces_sample_rate=1.0,
     )
-
+    os.environ["PYTHONWARNINGS"] = "ignore:semaphore_tracker:UserWarning"
     config = load_config(Path(args.config_path).expanduser(), args.model_type)
 
     limit_tf_gpu_memory(config.tf_gpu_memory_limit)
