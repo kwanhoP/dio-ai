@@ -73,6 +73,7 @@ class TransformersConfig:
     use_cosine_annealing: Optional[bool] = False
     fine_tune_ckpt: Optional[str] = None
     extra_data_args: Optional[Any] = None
+    track_category: Optional[str] = None
 
     @classmethod
     def from_file(

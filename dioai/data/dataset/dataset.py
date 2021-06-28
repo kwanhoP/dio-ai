@@ -82,6 +82,7 @@ class GPT2ChordMetaToNoteDataset(BaseDataset):
             chord_embedding_path=self.config.chord_embedding_path,
             num_meta=self.config.num_meta,
             n_embed=self.config.model.n_embd,
+            track_category=self.config.track_category,
         )
 
     def prepare_dataset(self) -> Iterator:

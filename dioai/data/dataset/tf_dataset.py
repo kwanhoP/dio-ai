@@ -11,6 +11,16 @@ from dioai.data.utils import NoiseGenerator
 from dioai.data.utils.constants import BertVocab, DPRVocab
 from dioai.preprocessor import utils
 
+TRACK_CATEGORY_IDX = 9
+TRACK_CATEGORY_MAP = {
+    "main_melody": 568,
+    "sub_melody": 569,
+    "accompaniment": 570,
+    "bass": 571,
+    "pad": 572,
+    "riff": 573,
+}
+
 
 def compute_attention_mask(input_features: np.ndarray) -> np.ndarray:
     """attention mask 계산. 입력값은 메타 정보로 패딩이 없습니다."""
@@ -135,6 +145,7 @@ class GPT2ChordMetaToNoteTFDataset(GPT2MetaToNoteTFDataset):
         chord_embedding_path: Union[str, Path],
         num_meta: int,
         n_embed: int,
+        track_category: str,
     ):
         super().__init__(data_dir=data_dir, split=split)
         with open(chord_embedding_path, "rb") as f_in:
@@ -145,6 +156,7 @@ class GPT2ChordMetaToNoteTFDataset(GPT2MetaToNoteTFDataset):
         }
         self.num_meta = num_meta
         self.n_embed = n_embed
+        self.track_category = track_category
 
     def build(
         self,
@@ -201,9 +213,14 @@ class GPT2ChordMetaToNoteTFDataset(GPT2MetaToNoteTFDataset):
             target_features = np.load(target_train_path, allow_pickle=True)
             for input_feature, target_feature in zip(input_features, target_features):
                 input_ids, chord_progression_hash = input_feature[:-1], input_feature[-1]
-                input_ids = np.concatenate([input_ids, target_feature])
-                attention_mask = compute_attention_mask(input_ids)
 
+                if self.track_category:
+                    if input_ids[TRACK_CATEGORY_IDX] == TRACK_CATEGORY_MAP[self.track_category]:
+                        input_ids = np.concatenate([input_ids, target_feature])
+                else:
+                    input_ids = np.concatenate([input_ids, target_feature])
+
+                attention_mask = compute_attention_mask(input_ids)
                 chord_progression_vector = self.chord_embedding_table.get(
                     chord_progression_hash, np.ones(self.n_embed)
                 )
