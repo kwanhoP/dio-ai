@@ -77,26 +77,55 @@ def main_hf(args):
     dataset_factory = PozalabsDatasetFactory()
     model_factory = PozalabsModelFactory()
 
-    trainer: transformers.Trainer = Trainer_hf(
-        model=model_factory.create(config.model_name, config.model),
-        args=config.training,
-        train_dataset=dataset_factory.create(
-            config=config,
-            split=config.train_split,
-        ),
-        eval_dataset=(
-            dataset_factory.create(
+    # trainer for rag, use multi configs, pretrained models
+    if config.model_name == "musicrag_hf":
+        dpr_config = load_config(Path(config.dpr_config_pth).expanduser(), "hf")
+        dpr_model = model_factory.create(dpr_config.model_name, dpr_config.model)
+        dpr_pretrained = dpr_model.from_pretrained(config.dpr_ckpt)
+        question_encoder = dpr_pretrained.dpr_meta_encoder
+
+        trainer: transformers.Trainer = Trainer_hf(
+            model=model_factory.create_rag(config.model_name, config.model, question_encoder),
+            args=config.training,
+            train_dataset=dataset_factory.create(
+                config=dpr_config,
+                split=dpr_config.train_split,
+            ),
+            eval_dataset=(
+                dataset_factory.create(
+                    config=dpr_config,
+                    split=dpr_config.eval_split,
+                    training=False,
+                    shuffle=False,
+                )
+                if dpr_config.training.evaluation_strategy != transformers.EvaluationStrategy.NO
+                else None
+            ),
+            use_cosine_annealing=config.use_cosine_annealing,
+            num_cycles=config.num_cycles,
+        )
+    else:
+        # default trainer
+        trainer: transformers.Trainer = Trainer_hf(
+            model=model_factory.create_rag(config.model_name, config.model),
+            args=config.training,
+            train_dataset=dataset_factory.create(
                 config=config,
-                split=config.eval_split,
-                training=False,
-                shuffle=False,
-            )
-            if config.training.evaluation_strategy != transformers.EvaluationStrategy.NO
-            else None
-        ),
-        use_cosine_annealing=config.use_cosine_annealing,
-        num_cycles=config.num_cycles,
-    )
+                split=config.train_split,
+            ),
+            eval_dataset=(
+                dataset_factory.create(
+                    config=config,
+                    split=config.eval_split,
+                    training=False,
+                    shuffle=False,
+                )
+                if config.training.evaluation_strategy != transformers.EvaluationStrategy.NO
+                else None
+            ),
+            use_cosine_annealing=config.use_cosine_annealing,
+            num_cycles=config.num_cycles,
+        )
     trainer.train(resume_from_checkpoint=config.fine_tune_ckpt)
 
 

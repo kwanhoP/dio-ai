@@ -74,7 +74,7 @@ def mk_dpr_csv(note_data_path: str) -> None:
 
 
 # embed
-def embed(documents: dict, encoder, device: str) -> Dict[str : np.ndarray]:
+def embed(documents: dict, encoder, device: str) -> Dict:
     """
     csv로 저장한 note_seq를 불러와 tensor로 변환 후 pretrained model에 임배딩 시킨다
     """
@@ -88,7 +88,8 @@ def embed(documents: dict, encoder, device: str) -> Dict[str : np.ndarray]:
     encoder = encoder.to(device)
     embeddings = encoder(input_ids, return_dict=True).pooler_output
     embeddings = embeddings.squeeze()
-    return {"embeddings": embeddings.cpu().numpy().astype("float32")}
+    title_ids = str(list(map(int, re.findall(r"\d+", str(raw_data))))[:5])
+    return {"embeddings": embeddings.cpu().numpy().astype("float32"), "title": title_ids}
 
 
 def save_note_dpr_index(args):
@@ -115,7 +116,13 @@ def save_note_dpr_index(args):
     # load dataset
     dataset = load_dataset("csv", data_files=[csv_path], split="train", column_names=["text"])
 
-    new_features = Features({"text": Value("string"), "embeddings": Sequence(Value("float32"))})
+    new_features = Features(
+        {
+            "text": Value("string"),
+            "embeddings": Sequence(Value("float32")),
+            "title": Sequence(Value("string")),
+        }
+    )
 
     # embed note using pretriained dpr_note_encoder
     dataset = dataset.map(

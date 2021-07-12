@@ -1,4 +1,5 @@
-from typing import Any, Dict, Union
+import re
+from typing import Any, Dict, List, Union
 
 import numpy as np
 import pytorch_lightning as pl
@@ -14,6 +15,8 @@ from transformers import (
     GPT2Config,
     GPT2LMHeadModel,
     PretrainedConfig,
+    RagRetriever,
+    RagSequenceForGeneration,
 )
 from transformers.file_utils import (
     add_code_sample_docstrings,
@@ -35,13 +38,16 @@ from transformers.models.gpt2.modeling_gpt2 import (
     GPT2_INPUTS_DOCSTRING,
     PARALLELIZE_DOCSTRING,
 )
+from transformers.models.rag.modeling_rag import RetrievAugLMMarginOutput
+from transformers.tokenization_utils_base import BatchEncoding
 
 # https://github.com/huggingface/transformers/blob/master/src/transformers/models/gpt2/modeling_gpt2.py#L804
 from transformers.utils.model_parallel_utils import assert_device_map, get_device_map
 
 from dioai.data.dataset.dataset import RelativeTransformerDataset
+from dioai.data.utils.constants import DPRVocab
 
-# from dioai.model import PozalabsModelFactory
+# from . import PozalabsModelFactory
 from dioai.model.layer import (
     Decoder,
     DPROutput,
@@ -484,6 +490,9 @@ class DPRPretrainedModel(PreTrainedModel):
     _keys_to_ignore_on_load_missing = [r"position_ids"]
 
 
+DPR_NOTE_OFFSET = 19
+
+
 class DPRModel(DPRPretrainedModel):
     name = "dpr_model_hf"
 
@@ -512,8 +521,8 @@ class DPRModel(DPRPretrainedModel):
         return_dict=None,
     ):
 
-        meta = input_ids[:, :19]
-        note = input_ids[:, 19:]
+        meta = input_ids[:, :DPR_NOTE_OFFSET]
+        note = input_ids[:, DPR_NOTE_OFFSET:]
         note_out = self.dpr_note_encoder(
             input_ids=note,
             attention_mask=attention_mask,
@@ -547,3 +556,223 @@ class DPRModel(DPRPretrainedModel):
         )
 
         return DPROutput(loss=loss)
+
+
+RAG_META_END = 19
+RAG_NOTE_OFFSET = 20  # DPR에서 노트 맨 앞에 sos 토큰을 추가해서 20으로 증가
+
+
+class MusicRagRetriever(RagRetriever):
+    """
+    RagRetirver을 상속 받아, 포자랩스 meta(question), note(context)에 대응되게 customize
+    meta 정보가 주어지면 index가 명시된 note 테이블에서 가장 유사한 n_doc개 note를 뽑아 meta와 붙인다
+
+    RagGenerator에 상속하여 사용
+    """
+
+    def __init__(self, config, index, init_retrieval=True):
+        super().__init__(config, None, None, index=index, init_retrieval=init_retrieval)
+
+    def __call__(
+        self,
+        question_input_ids: List[List[int]],
+        question_hidden_states: np.ndarray,
+        prefix=None,
+        n_docs=None,
+    ) -> BatchEncoding:
+        """
+        Retrieves documents for specified :obj:`question_hidden_states`.
+        """
+
+        n_docs = n_docs if n_docs is not None else self.n_docs
+        prefix = prefix if prefix is not None else self.config.generator.prefix
+        retrieved_doc_embeds, doc_ids, docs = self.retrieve(question_hidden_states, n_docs)
+
+        input_strings = question_input_ids
+
+        def generate_square_subsequent_mask(emb_dim):
+            # To do: batch 사이즈(default: 4) 파라미터로 받게 수정
+            """
+            attention mask 생성
+            """
+            mask = (torch.triu(torch.ones(emb_dim, 4)) == 1).transpose(0, 1)
+            mask = (
+                mask.float()
+                .masked_fill(mask == 0, float("-inf"))
+                .masked_fill(mask == 1, float(0.0))
+            )
+            return mask
+
+        def postprocess(docs, input_strings, prefix, n_docs):
+            """
+            meta와 뽑힌 n_doc개 note를 합치고
+            tensor로 변환 후 return
+            """
+
+            def _cat_meta_and_note(doc_note, input_meta, prefix):
+                if prefix is None:
+                    prefix = ""
+                out = prefix + input_meta + self.config.doc_sep + doc_note
+                return out
+
+            def _to_tensor(sequence):
+                return torch.tensor(list(map(int, re.findall(r"\d+", str(sequence))))).long()[:-1]
+
+            rag_input_strings = [
+                _cat_meta_and_note(
+                    docs[i]["text"][j],
+                    str(input_strings[i]),
+                    prefix,
+                )
+                for i in range(len(docs))
+                for j in range(n_docs)
+            ]
+
+            rag_input_tensor = list(map(_to_tensor, rag_input_strings))
+
+            res = None
+            for t in rag_input_tensor:
+                tmp = t.view(1, -1)
+                if res is not None:
+                    res = torch.cat([res, tmp])
+                else:
+                    res = tmp
+
+            return res.long()
+
+        def shift_token_symbols(input_ids):
+            """
+            dpr 학습을 위해 shift된 token 원상 복구
+            """
+            meta = input_ids[:, 1:RAG_META_END] + DPRVocab.meta_shift
+            note = input_ids[:, RAG_NOTE_OFFSET:]
+            return torch.cat([meta, note], dim=1)
+
+        context_input_ids = postprocess(
+            docs,
+            input_strings,
+            prefix,
+            n_docs,
+        )
+        context_input_ids = shift_token_symbols(context_input_ids)
+        context_attention_mask = generate_square_subsequent_mask(
+            self.config.generator.max_position_embeddings
+        )
+
+        return BatchEncoding(
+            {
+                "context_input_ids": context_input_ids,
+                "context_attention_mask": context_attention_mask,
+                "retrieved_doc_embeds": retrieved_doc_embeds,
+                "doc_ids": doc_ids,
+            },
+        )
+
+
+class MusicRagGenerator(RagSequenceForGeneration):
+    name = "musicrag_hf"
+
+    def __init__(self, config, question_encoder, **kwargs):
+
+        # retriever
+        retriever = MusicRagRetriever(config, index=None)
+
+        # generator(default: Bart)
+        generator = None
+
+        super().__init__(
+            config=config,
+            question_encoder=question_encoder,
+            generator=generator,
+            retriever=retriever,
+            **kwargs,
+        )
+
+    def forward(
+        self,
+        input_ids=None,
+        attention_mask=None,
+        encoder_outputs=None,
+        decoder_input_ids=None,
+        decoder_attention_mask=None,
+        past_key_values=None,
+        context_input_ids=None,
+        context_attention_mask=None,
+        doc_scores=None,
+        use_cache=None,
+        output_attentions=None,
+        output_hidden_states=None,
+        output_retrieved=None,
+        exclude_bos_score=None,
+        reduce_loss=None,
+        labels=None,
+        n_docs=None,
+        **kwargs,  # needs kwargs for generation
+    ):
+        n_docs = n_docs if n_docs is not None else self.config.n_docs
+        exclude_bos_score = (
+            exclude_bos_score if exclude_bos_score is not None else self.config.exclude_bos_score
+        )
+        reduce_loss = reduce_loss if reduce_loss is not None else self.config.reduce_loss
+
+        if labels is not None:
+            if decoder_input_ids is None:
+                decoder_input_ids = labels
+            use_cache = False
+        rag_kwargs = {
+            "input_ids": input_ids,
+            "attention_mask": attention_mask,
+            "encoder_outputs": encoder_outputs,
+            "decoder_input_ids": decoder_input_ids,
+            "decoder_attention_mask": decoder_attention_mask,
+            "context_input_ids": context_input_ids,
+            "context_attention_mask": context_attention_mask,
+            "doc_scores": doc_scores,
+            "past_key_values": past_key_values,
+            "use_cache": use_cache,
+            "output_attentions": output_attentions,
+            "output_hidden_states": output_hidden_states,
+            "output_retrieved": output_retrieved,
+            "n_docs": n_docs,
+        }
+        outputs = self.rag(**rag_kwargs)
+        labels = outputs.context_input_ids
+
+        loss = None
+
+        # n_doc 만큼 복사된 label duplicate 제거
+        unique_index = [i for idx, i in enumerate(range(labels.size()[0])) if idx % 2 == 0]
+        labels = labels[unique_index, :]
+
+        if labels is not None:
+            loss = self.get_nll(
+                outputs.logits,
+                outputs.doc_scores,
+                labels,
+                reduce_loss=True,
+                epsilon=self.config.label_smoothing,
+                exclude_bos_score=exclude_bos_score,
+                n_docs=n_docs,
+            )
+
+        LM_margin_out_dict = {
+            "loss": loss,
+            "logits": outputs.logits,
+            "doc_scores": outputs.doc_scores,
+            "past_key_values": outputs.past_key_values,
+            "context_input_ids": outputs.context_input_ids,
+            "context_attention_mask": outputs.context_attention_mask,
+            "retrieved_doc_embeds": outputs.retrieved_doc_embeds,
+            "retrieved_doc_ids": outputs.retrieved_doc_ids,
+            "question_encoder_last_hidden_state": outputs.question_encoder_last_hidden_state,
+            "question_enc_hidden_states": outputs.question_enc_hidden_states,
+            "question_enc_attentions": outputs.question_enc_attentions,
+            "generator_enc_last_hidden_state": outputs.generator_enc_last_hidden_state,
+            "generator_enc_hidden_states": outputs.generator_enc_hidden_states,
+            "generator_enc_attentions": outputs.generator_enc_attentions,
+            "generator_dec_hidden_states": outputs.generator_dec_hidden_states,
+            "generator_dec_attentions": outputs.generator_dec_attentions,
+            "generator_cross_attentions": outputs.generator_cross_attentions,
+        }
+
+        return RetrievAugLMMarginOutput(**LM_margin_out_dict)

@@ -8,6 +8,7 @@ from .dataset import (
     BertForDPRDataset,
     DPRDataset,
     GPT2ChordMetaToNoteDataset,
+    RagDataset,
     Seq2SeqDataset,
     meta_to_note_collate_fn,
 )
@@ -20,6 +21,7 @@ class PozalabsDatasetFactory:
         BartDenoisingNoteDataset.name: BartDenoisingNoteDataset,
         BertForDPRDataset.name: BertForDPRDataset,
         DPRDataset.name: DPRDataset,
+        RagDataset.name: RagDataset,
     }
 
     def create(self, config: TransformersConfig, *args, **kwargs):

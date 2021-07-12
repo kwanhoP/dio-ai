@@ -9,6 +9,7 @@ from typing import Any, Dict, Optional, Union
 
 from transformers import BartConfig, BertConfig, GPT2Config, PretrainedConfig, TrainingArguments
 from transformers.models.dpr.configuration_dpr import DPRConfig
+from transformers.models.rag.configuration_rag import RagConfig
 
 from dioai.data.utils import NoiseArguments
 
@@ -74,6 +75,8 @@ class TransformersConfig:
     fine_tune_ckpt: Optional[str] = None
     extra_data_args: Optional[Any] = None
     track_category: Optional[str] = None
+    dpr_config_pth: Optional[str] = None
+    dpr_ckpt: Optional[str] = None
 
     @classmethod
     def from_file(
@@ -107,6 +110,8 @@ class TransformersConfig:
             model_config = BertConfig(**data.pop("model"))
         if "dpr" in data["model_name"]:
             model_config = DPRConfig(**data.pop("model"))
+        if "rag" in data["model_name"]:
+            model_config = RagConfig(**data.pop("model"))
         training_arguments_dict = data.pop("training")
         if training_arguments_dict.get("output_dir") is None:
             training_arguments_dict.update(
