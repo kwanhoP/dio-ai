@@ -107,7 +107,7 @@ def main_hf(args):
     else:
         # default trainer
         trainer: transformers.Trainer = Trainer_hf(
-            model=model_factory.create_rag(config.model_name, config.model),
+            model=model_factory.create(config.model_name, config.model),
             args=config.training,
             train_dataset=dataset_factory.create(
                 config=config,

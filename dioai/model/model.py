@@ -423,7 +423,7 @@ class BartDenoisingNoteModel(BartForConditionalGeneration):
 
 
 class BertForDPR(BertForMaskedLM):
-    name = "bert_for_dpr_hf"
+    name = "bert_hf"
 
     def __init__(self, config: Union[PretrainedConfig, BertConfig]):
         super().__init__(config)

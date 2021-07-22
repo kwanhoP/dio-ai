@@ -8,7 +8,7 @@ import numpy as np
 import tensorflow as tf
 
 from dioai.data.utils import NoiseGenerator
-from dioai.data.utils.constants import BertVocab, DPRVocab
+from dioai.data.utils.constants import RagVocab
 from dioai.preprocessor import utils
 
 TRACK_CATEGORY_IDX = 9
@@ -477,17 +477,9 @@ class BertForDPRTFDataset:
         "labels": tf.TensorSpec(shape=(None,), dtype=tf.int64),
     }
 
-    def __init__(self, data_dir: Union[str, Path], split: str, switch: str):
+    def __init__(self, data_dir: Union[str, Path], split: str):
         self.data_dir = Path(data_dir)
         self.split = split
-        self.switch = switch
-        self.pad_id = BertVocab.NOTE_VOCAB["pad_id"]
-        if switch == "note":
-            self.sos_id = BertVocab.NOTE_VOCAB["sos_id"]
-            self.mask_id = BertVocab.NOTE_VOCAB["mask_id"]
-        else:
-            self.sos_id = BertVocab.META_VOCAB["sos_id"]
-            self.mask_id = BertVocab.NOTE_VOCAB["mask_id"]
 
     def build(
         self,
@@ -547,10 +539,6 @@ class BertForDPRTFDataset:
 
     def _masking_seq(self, datas: np.ndarray, masking_rate=0.15) -> Union[np.ndarray, np.ndarray]:
         output_label = []
-        NOTE_START = 4
-        NOTE_END = 423
-        META_START = 3
-        META_END = 218
         for i, token in enumerate(datas):
             prob = random.random()
             if prob < masking_rate:
@@ -558,22 +546,17 @@ class BertForDPRTFDataset:
 
                 # 80% randomly change token to mask token
                 if prob < 0.8:
-                    datas[i] = self.mask_id
-
+                    datas[i] = RagVocab.mask_id
                 # 10% randomly change token to random token
                 elif prob < 0.9:
-                    if self.switch == "meta":
-                        datas[i] = random.randrange(META_START, META_END + 1)
-                    else:
-                        datas[i] = random.randrange(NOTE_START, NOTE_END + 1)
-
+                    datas[i] = random.randrange(RagVocab.note_start_id, RagVocab.meta_end_id + 1)
                 # 10% randomly change token to current token
                 else:
                     pass
                 output_label.append(token)
             else:
                 datas[i] = token
-                output_label.append(self.pad_id)
+                output_label.append(RagVocab.pad_id)
         return datas, output_label
 
     def _get_numpy_generator(self):
@@ -587,27 +570,24 @@ class BertForDPRTFDataset:
         for (meta_train_path, note_train_path) in dataset_files_pair:
             meta_features = np.load(meta_train_path, allow_pickle=True)
             note_features = np.load(note_train_path, allow_pickle=True)
-            sequences = note_features if self.switch == "note" else meta_features
+            for meta_feature, target_feature in zip(meta_features, note_features):
+                meta_ids, _ = meta_feature[:-1], meta_feature[-1]
+                meta_ids = np.append(meta_ids, RagVocab.sep_id)
+                input_ids = np.concatenate([meta_ids, target_feature])
 
-            for seq in sequences:
-                if self.switch == "meta":
-                    seq = seq[:-1] - BertVocab.META_VOCAB["meta_seq_shift"]
-                else:
-                    seq = seq[:-1] + BertVocab.NOTE_VOCAB["note_seq_shift"]
-                    np.append(seq, BertVocab.NOTE_VOCAB["eos_id"])
-                data_masked, data_label = self._masking_seq(seq)
-                if len(data_masked) == 0:
+                input_masked, maksed_label = self._masking_seq(input_ids)
+                input_masked = np.insert(input_masked, 0, RagVocab.sos_id)
+                maksed_label = np.insert(maksed_label, 0, RagVocab.sos_id)
+
+                if len(input_masked) == 0:
                     continue
 
-                # [CLS] tag = SOS tag
-                data_masked = np.insert(data_masked, 0, self.sos_id)
-                data_label = np.insert(data_label, 0, self.pad_id)
+                attention_mask = compute_attention_mask(input_masked)
 
-                attention_mask = compute_attention_mask(data_masked)
                 yield {
-                    "input_ids": data_masked,
+                    "input_ids": input_masked,
                     "attention_mask": attention_mask,
-                    "labels": data_label,
+                    "labels": maksed_label,
                 }
 
 
@@ -685,10 +665,9 @@ class DPRTFDataset:
             target_features = np.load(target_train_path, allow_pickle=True)
             for input_feature, target_feature in zip(input_features, target_features):
                 input_ids, _ = input_feature[:-1], input_feature[-1]
-                input_ids = input_ids - DPRVocab.meta_shift
-                input_ids = np.insert(input_ids, 0, DPRVocab.eos_id)
-                target_feature = np.insert(target_feature, 0, DPRVocab.sos_id)
-                np.append(target_feature, DPRVocab.eos_id)
+                input_ids = np.insert(input_ids, 0, RagVocab.sos_id)
+                target_feature = np.insert(target_feature, 0, RagVocab.sos_id)
+
                 if not self.for_rag:
                     input_ids = np.concatenate([input_ids, target_feature])
                 yield {

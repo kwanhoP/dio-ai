@@ -10,6 +10,7 @@ import torch
 from fairseq.data.encoders.utils import get_whole_word_mask
 from tensorflow.keras.preprocessing.sequence import pad_sequences
 from torch.utils.data import Dataset, IterableDataset
+from transformers import BertConfig
 from transformers.models.dpr.configuration_dpr import DPRConfig
 
 from dioai.config import TransformersConfig
@@ -273,13 +274,12 @@ class BartDenoisingNoteDataset(BaseDataset):
 
 
 class BertForDPRDataset(BaseDataset):
-    name = "bert_for_dpr_hf"
+    name = "bert_hf"
 
     def __init__(
         self,
-        config: TransformersConfig,
+        config: Union[TransformersConfig, BertConfig],
         split: str,
-        switch: str,
         training: bool = True,
         shuffle: bool = False,
     ):
@@ -287,7 +287,6 @@ class BertForDPRDataset(BaseDataset):
         self.tf_dataset = BertForDPRTFDataset(
             self.config.data_dir,
             split=split,
-            switch=switch,
         )
 
     def prepare_dataset(self) -> Iterator:
