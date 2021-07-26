@@ -76,6 +76,7 @@ def main_hf(args):
 
     dataset_factory = PozalabsDatasetFactory()
     model_factory = PozalabsModelFactory()
+    # TODO: config 2개 씩 쓰는 rag, dpr 모델 학습 로직 통합 필요
 
     # trainer for rag, use multi configs, pretrained models
     if config.model_name == "musicrag_hf":
@@ -104,6 +105,33 @@ def main_hf(args):
             use_cosine_annealing=config.use_cosine_annealing,
             num_cycles=config.num_cycles,
         )
+    # training for dpr with pre-trained bert
+    elif config.model_name == "dpr_model_hf":
+        bert_config = load_config(Path(config.bert_config_pth).expanduser(), "hf")
+        bert_model = model_factory.create(bert_config.model_name, bert_config.model)
+        bert_pretrained = bert_model.from_pretrained(config.bert_ckpt)
+
+        trainer: transformers.Trainer = Trainer_hf(
+            model=model_factory.create_rag(config.model_name, config.model, bert_pretrained.bert),
+            args=config.training,
+            train_dataset=dataset_factory.create(
+                config=config,
+                split=config.train_split,
+            ),
+            eval_dataset=(
+                dataset_factory.create(
+                    config=config,
+                    split=config.eval_split,
+                    training=False,
+                    shuffle=False,
+                )
+                if bert_config.training.evaluation_strategy != transformers.EvaluationStrategy.NO
+                else None
+            ),
+            use_cosine_annealing=config.use_cosine_annealing,
+            num_cycles=config.num_cycles,
+        )
+
     else:
         # default trainer
         trainer: transformers.Trainer = Trainer_hf(

@@ -22,15 +22,6 @@ class RagVocab:
 
 
 @dataclass
-class DPRVocab:
-    pad_id = 0
-    eos_id = 1
-    sos_id = 2
-    note_shift = 1
-    meta_shift = 420
-
-
-@dataclass
 class Meta:
     bpm = 1
     key = 2

@@ -77,6 +77,8 @@ class TransformersConfig:
     track_category: Optional[str] = None
     dpr_config_pth: Optional[str] = None
     dpr_ckpt: Optional[str] = None
+    bert_config_pth: Optional[str] = None
+    bert_ckpt: Optional[str] = None
 
     @classmethod
     def from_file(

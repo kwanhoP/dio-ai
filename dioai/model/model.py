@@ -32,7 +32,6 @@ from transformers.modeling_utils import PreTrainedModel
 from transformers.models.bart.modeling_bart import shift_tokens_right
 from transformers.models.bert.modeling_bert import BertModel
 from transformers.models.dpr.configuration_dpr import DPRConfig
-from transformers.models.dpr.modeling_dpr import DPRContextEncoder, DPRQuestionEncoder
 from transformers.models.gpt2.modeling_gpt2 import (
     DEPARALLELIZE_DOCSTRING,
     GPT2_INPUTS_DOCSTRING,
@@ -45,7 +44,6 @@ from transformers.tokenization_utils_base import BatchEncoding
 from transformers.utils.model_parallel_utils import assert_device_map, get_device_map
 
 from dioai.data.dataset.dataset import RelativeTransformerDataset
-from dioai.data.utils.constants import DPRVocab
 
 # from . import PozalabsModelFactory
 from dioai.model.layer import (
@@ -499,12 +497,11 @@ class DPRModel(DPRPretrainedModel):
     _keys_to_ignore_on_load_missing = [r"position_ids"]
     load_tf_weights = None
 
-    def __init__(self, config: Union[PretrainedConfig, DPRConfig]):
+    def __init__(self, config: Union[PretrainedConfig, DPRConfig], pretrained_bert):
         super().__init__(config)
         self.config = config
-        self.dpr_note_encoder = DPRContextEncoder(DPRConfig(**config.model_ctx))
-        self.dpr_meta_encoder = DPRQuestionEncoder(DPRConfig(**config.model_question))
-        self.init_weights()
+        self.dpr_note_encoder = pretrained_bert
+        self.dpr_meta_encoder = pretrained_bert
 
     def init_weights(self):
         self.dpr_note_encoder.ctx_encoder.init_weights()
@@ -640,21 +637,13 @@ class MusicRagRetriever(RagRetriever):
 
             return res.long()
 
-        def shift_token_symbols(input_ids):
-            """
-            dpr 학습을 위해 shift된 token 원상 복구
-            """
-            meta = input_ids[:, 1:RAG_META_END] + DPRVocab.meta_shift
-            note = input_ids[:, RAG_NOTE_OFFSET:]
-            return torch.cat([meta, note], dim=1)
-
         context_input_ids = postprocess(
             docs,
             input_strings,
             prefix,
             n_docs,
         )
-        context_input_ids = shift_token_symbols(context_input_ids)
+
         context_attention_mask = generate_square_subsequent_mask(
             self.config.generator.max_position_embeddings
         )

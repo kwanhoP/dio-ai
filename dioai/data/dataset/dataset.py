@@ -309,8 +309,8 @@ class DPRDataset(BaseDataset):
         self.training = training
         self.tf_dataset_build_args = dict(
             batch_size=self.config.batch_size,
-            max_length=self.config.model.model_ctx["max_position_embeddings"],
-            pad_id=self.config.model.model_ctx["pad_token_id"],
+            max_length=self.config.model.max_position_embeddings,
+            pad_id=self.config.model.pad_token_id,
             training=training,
             shuffle=shuffle,
         )
