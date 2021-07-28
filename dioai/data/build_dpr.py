@@ -12,17 +12,19 @@ from datasets import Features, Sequence, Value, load_dataset
 from keras_preprocessing.sequence import pad_sequences
 
 from dioai.config import PytorchlightConfig, TransformersConfig
+from dioai.data.utils.constants import RagVocab
 from dioai.model import ModelType, PozalabsModelFactory
 
 
 def get_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser("save dpr dataset & faiss index")
-    parser.add_argument("--config_path", type=str, help="전체 설정값이 저장된 JSON 파일 경로")
+    parser.add_argument("--config_path", type=str, help="dpr 모델 설정값이 저장된 JSON 파일 경로")
     parser.add_argument("--embed_dim", default=768, type=int, help="모델 임배딩 차원")
     parser.add_argument("--csv_path", type=str, help="저장할 데이터 셋 csv 변환 파일 경로")
     parser.add_argument("--dataset_out", default="note_dpr_dataset", type=str, help="dataset 저장 경로")
     parser.add_argument("--index_out", default="note_dpr_index.faiss", type=str, help="index 저장 경로")
     parser.add_argument("--gpu_num", default=0, type=int, help="사용할 gpu 번호", choices=[0, 1, 2, 3])
+    parser.add_argument("--dpr_ckpt", type=str, help="table 구성에 사용할 dpr ckpt")
     return parser
 
 
@@ -64,7 +66,7 @@ def mk_dpr_csv(note_data_path: str) -> None:
     raw_note = np.load(note_data_path, allow_pickle=True)
     new_note = []
     for note in raw_note:
-        new_note.append(np.insert(note, 0, 2))
+        new_note.append(np.insert(note, 0, RagVocab.sos_id))
     new_note = np.array(new_note)
     new_note = pad_sequences(new_note, maxlen=512, padding="post")
     note = torch.unsqueeze(torch.tensor(new_note), 1)
@@ -99,19 +101,21 @@ def save_note_dpr_index(args):
     dataset_out = args.dataset_out
     index_out = args.index_out
     gpu_num = args.gpu_num
+    dpr_ckpt = args.dpr_ckpt
 
     # set GPU
     torch.set_grad_enabled(False)
     device = torch.device(f"cuda:{gpu_num}" if torch.cuda.is_available() else "cpu")
     torch.cuda.set_device(device)
 
-    # load pretrained dpr_ctx_encoder
+    # load pretrained bert & dpr_ctx_encoder
     model_factory = PozalabsModelFactory()
     config = load_config(Path(config_path).expanduser(), "hf")
-    dpr_model = model_factory.create(config.model_name, config.model)
-    dpr_pretrained = dpr_model.from_pretrained(
-        "/media/experiments/checkpoints/dpr_model_hf-210614_134529/checkpoint-15000"
-    )
+    bert_config = load_config(Path(config.bert_config_pth).expanduser(), "hf")
+    bert_model = model_factory.create(bert_config.model_name, bert_config.model)
+    bert_pretrained = bert_model.from_pretrained(config.bert_ckpt)
+    dpr_model = model_factory.create_rag(config.model_name, config.model, bert_pretrained.bert)
+    dpr_pretrained = dpr_model.from_pretrained(dpr_ckpt, bert_pretrained.bert)
 
     # load dataset
     dataset = load_dataset("csv", data_files=[csv_path], split="train", column_names=["text"])
