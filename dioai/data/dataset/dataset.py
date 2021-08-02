@@ -20,8 +20,8 @@ from dioai.data.utils.constants import META_OFFSET, NOTE_SEQ_COMPONENTS
 from .tf_dataset import (
     BartDenoisingNoteTFDataset,
     BertForDPRTFDataset,
-    DPRTFDataset,
     GPT2ChordMetaToNoteTFDataset,
+    RAGTFDataset,
     TransformerDataset,
     gather_files,
 )
@@ -314,7 +314,7 @@ class DPRDataset(BaseDataset):
             training=training,
             shuffle=shuffle,
         )
-        self.tf_dataset = DPRTFDataset(
+        self.tf_dataset = RAGTFDataset(
             self.config.data_dir,
             split=split,
         )
@@ -344,7 +344,7 @@ class RagDataset(BaseDataset):
             training=training,
             shuffle=shuffle,
         )
-        self.tf_dataset = DPRTFDataset(
+        self.tf_dataset = RAGTFDataset(
             self.config.data_dir,
             split=split,
             for_rag=True,

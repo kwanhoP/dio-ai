@@ -576,6 +576,7 @@ class MusicRagRetriever(RagRetriever):
         question_hidden_states: np.ndarray,
         prefix=None,
         n_docs=None,
+        note_ids=None,
     ) -> BatchEncoding:
         """
         Retrieves documents for specified :obj:`question_hidden_states`.
@@ -588,11 +589,15 @@ class MusicRagRetriever(RagRetriever):
         input_strings = question_input_ids
 
         def generate_square_subsequent_mask(emb_dim):
-            # To do: batch 사이즈(default: 4) 파라미터로 받게 수정
             """
             attention mask 생성
             """
-            mask = (torch.triu(torch.ones(emb_dim, 4)) == 1).transpose(0, 1)
+            mask = (
+                torch.triu(
+                    torch.ones(emb_dim, (self.config.n_docs + 1) * self.config.retrieval_batch_size)
+                )
+                == 1
+            ).transpose(0, 1)
             mask = (
                 mask.float()
                 .masked_fill(mask == 0, float("-inf"))
@@ -609,7 +614,7 @@ class MusicRagRetriever(RagRetriever):
             def _cat_meta_and_note(doc_note, input_meta, prefix):
                 if prefix is None:
                     prefix = ""
-                out = prefix + input_meta + self.config.doc_sep + doc_note
+                out = prefix + input_meta + doc_note
                 return out
 
             def _to_tensor(sequence):
@@ -648,6 +653,8 @@ class MusicRagRetriever(RagRetriever):
             self.config.generator.max_position_embeddings
         )
 
+        # dpr retriver로 뽑힌 context_input에 note_id(label)를 합쳐서 rag generator input에 label 반영
+        context_input_ids = torch.cat([context_input_ids, note_ids.cpu()])
         return BatchEncoding(
             {
                 "context_input_ids": context_input_ids,
@@ -662,6 +669,7 @@ class MusicRagGenerator(RagSequenceForGeneration):
     name = "musicrag_hf"
 
     def __init__(self, config, question_encoder, **kwargs):
+        self.META_OFFSET = 19
 
         # retriever
         retriever = MusicRagRetriever(config, index=None)
@@ -708,8 +716,16 @@ class MusicRagGenerator(RagSequenceForGeneration):
             if decoder_input_ids is None:
                 decoder_input_ids = labels
             use_cache = False
+
+        # meta+note를 label로 사용, dpr에서 합쳐진 context_input과 길이를 패딩으로 맞춰 줌
+        labels = input_ids
+        label_len = labels.size()[1]
+        labels = F.pad(
+            labels, pad=(0, self.config.generator.max_position_embeddings - label_len), value=0
+        )
+
         rag_kwargs = {
-            "input_ids": input_ids,
+            "input_ids": input_ids[:, : self.META_OFFSET],
             "attention_mask": attention_mask,
             "encoder_outputs": encoder_outputs,
             "decoder_input_ids": decoder_input_ids,
@@ -723,25 +739,29 @@ class MusicRagGenerator(RagSequenceForGeneration):
             "output_hidden_states": output_hidden_states,
             "output_retrieved": output_retrieved,
             "n_docs": n_docs,
+            "note_ids": labels,
         }
         outputs = self.rag(**rag_kwargs)
-        labels = outputs.context_input_ids
 
         loss = None
 
-        # n_doc 만큼 복사된 label duplicate 제거
-        unique_index = [i for idx, i in enumerate(range(labels.size()[0])) if idx % 2 == 0]
-        labels = labels[unique_index, :]
+        # n_doc개 만큼 있는 doc_scores 앞에 label에 해당하는 점수를 첫번째 docs 점수보다 0.1 높게 할당
+        label_score = []
+        for score in outputs.doc_scores:
+            label_score.append(score[0] + 0.1)
+        label_score = torch.tensor(label_score)
+        label_score = label_score.to(outputs.doc_scores)
+        doc_score = torch.cat([label_score.view(-1, 1), outputs.doc_scores], dim=1)
 
         if labels is not None:
             loss = self.get_nll(
                 outputs.logits,
-                outputs.doc_scores,
+                doc_score,
                 labels,
                 reduce_loss=True,
                 epsilon=self.config.label_smoothing,
                 exclude_bos_score=exclude_bos_score,
-                n_docs=n_docs,
+                n_docs=n_docs + 1,
             )
 
         LM_margin_out_dict = {

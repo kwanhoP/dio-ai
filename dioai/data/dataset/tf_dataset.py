@@ -591,15 +591,14 @@ class BertForDPRTFDataset:
                 }
 
 
-class DPRTFDataset:
+class RAGTFDataset:
     output_signature = {
         "input_ids": tf.TensorSpec(shape=(None,), dtype=tf.int64),
     }
 
-    def __init__(self, data_dir: Union[str, Path], split: str, for_rag=False):
+    def __init__(self, data_dir: Union[str, Path], split: str):
         self.data_dir = Path(data_dir)
         self.split = split
-        self.for_rag = for_rag
 
     def build(
         self,
@@ -667,9 +666,8 @@ class DPRTFDataset:
                 input_ids, _ = input_feature[:-1], input_feature[-1]
                 input_ids = np.insert(input_ids, 0, RagVocab.sos_id)
                 target_feature = np.insert(target_feature, 0, RagVocab.sos_id)
+                input_ids = np.concatenate([input_ids, target_feature])
 
-                if not self.for_rag:
-                    input_ids = np.concatenate([input_ids, target_feature])
                 yield {
                     "input_ids": input_ids,
                 }
