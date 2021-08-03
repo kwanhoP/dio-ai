@@ -576,7 +576,6 @@ class MusicRagRetriever(RagRetriever):
         question_hidden_states: np.ndarray,
         prefix=None,
         n_docs=None,
-        note_ids=None,
     ) -> BatchEncoding:
         """
         Retrieves documents for specified :obj:`question_hidden_states`.
@@ -594,7 +593,7 @@ class MusicRagRetriever(RagRetriever):
             """
             mask = (
                 torch.triu(
-                    torch.ones(emb_dim, (self.config.n_docs + 1) * self.config.retrieval_batch_size)
+                    torch.ones(emb_dim, (self.config.n_docs) * self.config.retrieval_batch_size)
                 )
                 == 1
             ).transpose(0, 1)
@@ -653,8 +652,6 @@ class MusicRagRetriever(RagRetriever):
             self.config.generator.max_position_embeddings
         )
 
-        # dpr retriver로 뽑힌 context_input에 note_id(label)를 합쳐서 rag generator input에 label 반영
-        context_input_ids = torch.cat([context_input_ids, note_ids.cpu()])
         return BatchEncoding(
             {
                 "context_input_ids": context_input_ids,
@@ -712,17 +709,17 @@ class MusicRagGenerator(RagSequenceForGeneration):
         )
         reduce_loss = reduce_loss if reduce_loss is not None else self.config.reduce_loss
 
-        if labels is not None:
-            if decoder_input_ids is None:
-                decoder_input_ids = labels
-            use_cache = False
-
         # meta+note를 label로 사용, dpr에서 합쳐진 context_input과 길이를 패딩으로 맞춰 줌
         labels = input_ids
         label_len = labels.size()[1]
         labels = F.pad(
             labels, pad=(0, self.config.generator.max_position_embeddings - label_len), value=0
         )
+
+        if labels is not None:
+            if decoder_input_ids is None:
+                decoder_input_ids = labels
+            use_cache = False
 
         rag_kwargs = {
             "input_ids": input_ids[:, : self.META_OFFSET],
@@ -739,29 +736,20 @@ class MusicRagGenerator(RagSequenceForGeneration):
             "output_hidden_states": output_hidden_states,
             "output_retrieved": output_retrieved,
             "n_docs": n_docs,
-            "note_ids": labels,
         }
         outputs = self.rag(**rag_kwargs)
 
         loss = None
 
-        # n_doc개 만큼 있는 doc_scores 앞에 label에 해당하는 점수를 첫번째 docs 점수보다 0.1 높게 할당
-        label_score = []
-        for score in outputs.doc_scores:
-            label_score.append(score[0] + 0.1)
-        label_score = torch.tensor(label_score)
-        label_score = label_score.to(outputs.doc_scores)
-        doc_score = torch.cat([label_score.view(-1, 1), outputs.doc_scores], dim=1)
-
         if labels is not None:
             loss = self.get_nll(
                 outputs.logits,
-                doc_score,
+                outputs.doc_scores,
                 labels,
                 reduce_loss=True,
                 epsilon=self.config.label_smoothing,
                 exclude_bos_score=exclude_bos_score,
-                n_docs=n_docs + 1,
+                n_docs=n_docs,
             )
 
         LM_margin_out_dict = {
