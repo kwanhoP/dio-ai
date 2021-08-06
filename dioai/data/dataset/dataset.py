@@ -15,10 +15,11 @@ from transformers.models.dpr.configuration_dpr import DPRConfig
 
 from dioai.config import TransformersConfig
 from dioai.data.utils import NoiseArguments, NoiseGenerator, NoteDictionary
-from dioai.data.utils.constants import META_OFFSET, NOTE_SEQ_COMPONENTS
+from dioai.data.utils.constants import META_OFFSET, MIDI_SEQ_COMPONENTS, NOTE_SEQ_COMPONENTS
 
 from .tf_dataset import (
     BartDenoisingNoteTFDataset,
+    BartForRagTFDataset,
     BertForDPRTFDataset,
     GPT2ChordMetaToNoteTFDataset,
     RAGTFDataset,
@@ -249,6 +250,61 @@ class BartDenoisingNoteDataset(BaseDataset):
         note_dictionary = NoteDictionary()
         note_dictionary.add_note_vocabs(
             note_seq_components=NOTE_SEQ_COMPONENTS,
+            use_bos_symbol=True,
+            use_mask_symbol=True,
+        )
+        return note_dictionary
+
+    def _initialize_noise_generator(
+        self, note_dict: NoteDictionary, noise_args: NoiseArguments, shuffle: bool = False
+    ) -> NoiseGenerator:
+        mask_whole_words = (
+            get_whole_word_mask(noise_args, note_dict)
+            if noise_args.mask_length != "subword"
+            else None
+        )
+        noise_generator = NoiseGenerator(
+            vocab=note_dict,
+            mask_idx=note_dict.mask_index,
+            mask_whole_words=mask_whole_words,
+            shuffle=shuffle,
+            seed=1203,
+            args=noise_args,
+        )
+        return noise_generator
+
+
+class BartForRagDataset(BartDenoisingNoteDataset):
+    name = "bart_pretrained_hf"
+
+    def __init__(
+        self, config: TransformersConfig, split: str, training: bool = True, shuffle: bool = False
+    ):
+        self.config = config
+        self.training = training
+        self.tf_dataset_build_args = dict(
+            batch_size=self.config.batch_size,
+            max_length=self.config.model.max_position_embeddings,
+            pad_id=self.config.model.pad_token_id,
+            training=training,
+            shuffle=shuffle,
+        )
+        self.noise_generator = self._initialize_noise_generator(
+            note_dict=self.get_note_dictionary(),
+            noise_args=self.config.extra_data_args,
+        )
+        self.tf_dataset = BartForRagTFDataset(
+            data_dir=self.config.data_dir,
+            split=split,
+            noise_generator=self.noise_generator,
+        )
+
+    @classmethod
+    def get_note_dictionary(cls) -> NoteDictionary:
+        """BartDenoisingNoteModel 에서 사용하는 vocabulary"""
+        note_dictionary = NoteDictionary()
+        note_dictionary.add_note_vocabs(
+            note_seq_components=MIDI_SEQ_COMPONENTS,
             use_bos_symbol=True,
             use_mask_symbol=True,
         )

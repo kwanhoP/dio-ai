@@ -79,6 +79,8 @@ class TransformersConfig:
     dpr_ckpt: Optional[str] = None
     bert_config_pth: Optional[str] = None
     bert_ckpt: Optional[str] = None
+    bart_config_pth: Optional[str] = None
+    bart_ckpt: Optional[str] = None
 
     @classmethod
     def from_file(

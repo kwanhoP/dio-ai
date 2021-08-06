@@ -468,6 +468,48 @@ class BartDenoisingNoteTFDataset:
                 }
 
 
+class BartForRagTFDataset(BartDenoisingNoteTFDataset):
+    npy_dir_name_prefix = "output_npy"
+    output_signature = {
+        "input_ids": tf.TensorSpec(shape=(None,), dtype=tf.int64),
+        "attention_mask": tf.TensorSpec(shape=(None,), dtype=tf.int64),
+        "labels": tf.TensorSpec(shape=(None,), dtype=tf.int64),
+    }
+
+    def __init__(self, data_dir: Union[str, Path], split: str, noise_generator: NoiseGenerator):
+        super().__init__(data_dir, split, noise_generator)
+
+    def _get_numpy_generator(self):
+
+        dataset_paths = list(self.data_dir.rglob("**/*"))
+        input_train_files = gather_files(dataset_paths, prefix=f"input_{self.split}")
+        target_train_files = gather_files(dataset_paths, prefix=f"target_{self.split}")
+
+        dataset_files_pair = list(zip(input_train_files, target_train_files))
+        random.shuffle(dataset_files_pair)
+        for (input_train_path, target_train_path) in dataset_files_pair:
+            input_features = np.load(input_train_path, allow_pickle=True)
+            target_features = np.load(target_train_path, allow_pickle=True)
+            for input_feature, target_feature in zip(input_features, target_features):
+                input_ids, _ = input_feature[:-1], input_feature[-1]
+                input_ids = np.insert(input_ids, 0, self.bos_id)
+                input_ids = np.concatenate([input_ids, target_feature])
+
+                if input_ids[-1] != self.eos_id:
+                    input_ids = np.append(input_ids, self.eos_id)
+
+                fine_input_ids = copy.deepcopy(input_ids)
+
+                corrupted_note_seqs = self.noise_generator.on_dataset(dataset=list(input_ids))
+                corrupted_note_seq = corrupted_note_seqs[0].numpy()
+                attention_mask = compute_attention_mask(corrupted_note_seq)
+                yield {
+                    "input_ids": corrupted_note_seq,
+                    "attention_mask": attention_mask,
+                    "labels": fine_input_ids,
+                }
+
+
 class BertForDPRTFDataset:
     npy_dir_name_prefix = "output_npy"
     target_filename = "target"

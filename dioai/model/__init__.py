@@ -22,12 +22,14 @@ class ModelType(enum.Enum):
 
 
 class PozalabsModelFactory:
+    BartPretrainedRag = "bart_pretrained_hf"
     model_map = {
         GPT2BaseModel.name: GPT2BaseModel,
         GP2MetaToNoteModel.name: GP2MetaToNoteModel,
         GPT2ChordMetaToNoteModel.name: GPT2ChordMetaToNoteModel,
         ConditionalRelativeTransformer.name: ConditionalRelativeTransformer,
         BartDenoisingNoteModel.name: BartDenoisingNoteModel,
+        BartPretrainedRag: BartDenoisingNoteModel,
         BertForDPR.name: BertForDPR,
         DPRModel.name: DPRModel,
         MusicRagGenerator.name: MusicRagGenerator,
@@ -56,6 +58,7 @@ class PozalabsModelFactory:
         name: str,
         config: Optional[PretrainedConfig] = None,
         question_encoder=None,
+        generator=None,
         checkpoint_dir: Optional[Union[str, Path]] = None,
     ):
         model_cls = self.model_map.get(name)
@@ -68,7 +71,26 @@ class PozalabsModelFactory:
                 return model_cls.from_pretrained(checkpoint_dir)
             elif model_type == ModelType.PytorchLightning.value:
                 return model_cls.load_from_checkpoint(checkpoint_dir)
-        return model_cls(config, question_encoder)
+        return model_cls(config, question_encoder, generator)
+
+    def create_dpr(
+        self,
+        name: str,
+        config: Optional[PretrainedConfig] = None,
+        pretrained_bert=None,
+        checkpoint_dir: Optional[Union[str, Path]] = None,
+    ):
+        model_cls = self.model_map.get(name)
+        model_type = name[-2:]
+        if model_cls is None:
+            raise ValueError(f"`name` should be one of {tuple(self.model_map.keys())}")
+
+        if checkpoint_dir is not None:
+            if model_type == ModelType.HuggingFace.value:
+                return model_cls.from_pretrained(checkpoint_dir)
+            elif model_type == ModelType.PytorchLightning.value:
+                return model_cls.load_from_checkpoint(checkpoint_dir)
+        return model_cls(config, pretrained_bert)
 
 
 __all__ = ["PozalabsModelFactory"]

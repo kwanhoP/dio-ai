@@ -4,6 +4,13 @@ META_OFFSET = 421
 NOTE_SEQ_OFFSET = 2
 
 NOTE_SEQ_COMPONENTS = {"note_on": 128, "note_off": 128, "time_shift": 100, "velocity": 64}
+MIDI_SEQ_COMPONENTS = {
+    "note_on": 128,
+    "note_off": 128,
+    "time_shift": 100,
+    "velocity": 64,
+    "meta": 216,
+}
 
 
 @dataclass

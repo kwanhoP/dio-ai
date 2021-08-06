@@ -84,14 +84,20 @@ def main_hf(args):
         bert_config = load_config(Path(config.bert_config_pth).expanduser(), "hf")
         bert_model = model_factory.create(bert_config.model_name, bert_config.model)
         bert_pretrained = bert_model.from_pretrained(config.bert_ckpt)
-        dpr_model = model_factory.create_rag(
+        dpr_model = model_factory.create_dpr(
             dpr_config.model_name, dpr_config.model, bert_pretrained.bert
         )
         dpr_pretrained = dpr_model.from_pretrained(config.dpr_ckpt, bert_pretrained.bert)
         question_encoder = dpr_pretrained.dpr_meta_encoder
 
+        bart_config = load_config(Path(config.bart_config_pth).expanduser(), "hf")
+        bart_model = model_factory.create(bart_config.model_name, bart_config.model)
+        bart_pretrained = bart_model.from_pretrained(config.bart_ckpt)
+
         trainer: transformers.Trainer = Trainer_hf(
-            model=model_factory.create_rag(config.model_name, config.model, question_encoder),
+            model=model_factory.create_rag(
+                config.model_name, config.model, question_encoder, bart_pretrained
+            ),
             args=config.training,
             train_dataset=dataset_factory.create(
                 config=dpr_config,
