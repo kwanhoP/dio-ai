@@ -26,7 +26,7 @@ from dioai.preprocessor.encoder.meta import (
 from dioai.preprocessor.utils import constants
 from dioai.preprocessor.utils.container import MidiInfo, MidiMeta
 from train import load_config
-
+from dioai.data.utils.constants import RagVocab
 
 def get_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser("Midi generation")
@@ -79,6 +79,9 @@ def get_parser() -> argparse.ArgumentParser:
         "--beam_size", type=int, default=5, help="only used for beam search decoding(Rtransformers)"
     )
     parser.add_argument("--temperature", type=int, default=1, help="temperature scaling on softmax")
+    parser.add_argument(
+        "--n_docs", type=int, default=10, help="number of retriver note sequence using RAG"
+    )
     return parser
 
 
@@ -152,12 +155,44 @@ def generate_note_sequence(
     return result
 
 
+def generate_note_sequence_rag(
+    model,
+    input_meta: torch.Tensor,
+    num_generate: int,
+    max_length: int,
+    top_k: float,
+    top_p: float,
+    pad_token_id: int,
+    eos_token_id: int,
+    n_docs: int,
+):
+    result = []
+    input_meta = torch.cat(
+        [torch.tensor([RagVocab.sos_id], dtype=torch.long).view(1, -1), input_meta], dim=1
+    )
+    for _ in range(num_generate):
+        output = model.generate(
+            input_meta,
+            num_return_sequences=num_generate,
+            do_sample=True,
+            max_length=max_length,
+            n_docs=n_docs,
+            top_k=top_k,
+            top_p=top_p,
+            pad_token_id=pad_token_id,
+            eos_token_id=eos_token_id,
+            num_beams=1,  # beam search 사용 안함
+        )
+        result.extend(output)
+    return result
+
+
 def decode_note_sequence(
-    generation_result: List[torch.Tensor], num_meta: int, output_dir: Union[str, Path]
+    generation_result: List[torch.Tensor], num_meta: int, meta, output_dir: Union[str, Path]
 ):
     for idx, raw_output in enumerate(generation_result):
         # TODO: 인덱싱으로 접근하지 않게 수정하기
-        encoded_meta_dict = sub_offset(raw_output[:num_meta])
+        encoded_meta_dict = sub_offset(torch.tensor(meta))
         note_sequence = raw_output[num_meta:]
         decode_midi(
             output_path=Path(output_dir).joinpath(f"decoded_{idx:03d}.mid"),
@@ -168,6 +203,28 @@ def decode_note_sequence(
 def load_chord_embedding(embedding_path: Union[str, Path]) -> Dict[Tuple, np.ndarray]:
     with open(embedding_path, "rb") as f_in:
         return pickle.load(f_in)
+
+
+def load_pretrained_model(config, model_factory):
+    dpr_config = load_config(Path(config.dpr_config_pth).expanduser(), "hf")
+    bert_config = load_config(Path(config.bert_config_pth).expanduser(), "hf")
+    bert_model = model_factory.create(bert_config.model_name, bert_config.model)
+    bert_pretrained = bert_model.from_pretrained(config.bert_ckpt)
+    dpr_model = model_factory.create_dpr(
+        dpr_config.model_name, dpr_config.model, bert_pretrained.bert
+    )
+    dpr_pretrained = dpr_model.from_pretrained(config.dpr_ckpt, bert_pretrained.bert)
+    question_encoder = dpr_pretrained.dpr_meta_encoder
+
+    bart_config = load_config(Path(config.bart_config_pth).expanduser(), "hf")
+    bart_model = model_factory.create(bart_config.model_name, bart_config.model)
+    generator = bart_model.from_pretrained(config.bart_ckpt)
+
+    rag_model = model_factory.create_rag(
+        config.model_name, config.model, question_encoder, generator
+    )
+
+    return rag_model, question_encoder, generator
 
 
 def main_hf(args: argparse.Namespace) -> None:
@@ -212,6 +269,23 @@ def main_hf(args: argparse.Namespace) -> None:
 
     logger.info("Start generation")
     model_factory = PozalabsModelFactory()
+
+    rag_model, question_encoder, generator = load_pretrained_model(config, model_factory)
+    generation_result = generate_note_sequence_rag(
+        model=rag_model.from_pretrained(
+            checkpoint_dir, question_encoder=question_encoder, generator=generator
+        ),
+        # 입력값은 [batch_size, sequence_length]
+        input_meta=torch.unsqueeze(torch.LongTensor(encoded_meta), dim=0),
+        num_generate=args.num_generate,
+        top_k=args.top_k,
+        top_p=args.top_p,
+        max_length=config.model.max_position_embeddings,
+        pad_token_id=config.model.pad_token_id,
+        eos_token_id=config.model.eos_token_id,
+        n_docs=args.n_docs,
+    )
+    
     generation_result = generate_note_sequence(
         model=model_factory.create(name=config.model_name, checkpoint_dir=checkpoint_dir),
         # 입력값은 [batch_size, sequence_length]
@@ -237,6 +311,7 @@ def main_hf(args: argparse.Namespace) -> None:
     decode_note_sequence(
         generation_result=generation_result,
         num_meta=len(encoded_meta),
+        meta=encoded_meta,
         output_dir=output_dir,
     )
     logger.info("Finished decoding")

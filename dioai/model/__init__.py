@@ -68,7 +68,9 @@ class PozalabsModelFactory:
 
         if checkpoint_dir is not None:
             if model_type == ModelType.HuggingFace.value:
-                return model_cls.from_pretrained(checkpoint_dir)
+                return model_cls.from_pretrained(
+                    checkpoint_dir, question_encoder=question_encoder, generator=generator
+                )
             elif model_type == ModelType.PytorchLightning.value:
                 return model_cls.load_from_checkpoint(checkpoint_dir)
         return model_cls(config, question_encoder, generator)
