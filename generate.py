@@ -232,6 +232,7 @@ def main_hf(args: argparse.Namespace) -> None:
     checkpoint_dir = Path(args.checkpoint_dir).expanduser()
     root_config_path = checkpoint_dir.parent.joinpath("root_config.json")
     config = TransformersConfig.from_file(root_config_path, from_pretrained=True)
+    model_name = config.model_name
 
     chord_embedding = None
     chord_progression = constants.UNKNOWN
@@ -270,38 +271,39 @@ def main_hf(args: argparse.Namespace) -> None:
     logger.info("Start generation")
     model_factory = PozalabsModelFactory()
 
-    rag_model, question_encoder, generator = load_pretrained_model(config, model_factory)
-    generation_result = generate_note_sequence_rag(
-        model=rag_model.from_pretrained(
-            checkpoint_dir, question_encoder=question_encoder, generator=generator
-        ),
-        # 입력값은 [batch_size, sequence_length]
-        input_meta=torch.unsqueeze(torch.LongTensor(encoded_meta), dim=0),
-        num_generate=args.num_generate,
-        top_k=args.top_k,
-        top_p=args.top_p,
-        max_length=config.model.max_position_embeddings,
-        pad_token_id=config.model.pad_token_id,
-        eos_token_id=config.model.eos_token_id,
-        n_docs=args.n_docs,
-    )
-    
-    generation_result = generate_note_sequence(
-        model=model_factory.create(name=config.model_name, checkpoint_dir=checkpoint_dir),
-        # 입력값은 [batch_size, sequence_length]
-        input_meta=torch.unsqueeze(torch.LongTensor(encoded_meta), dim=0),
-        num_generate=args.num_generate,
-        top_k=args.top_k,
-        top_p=args.top_p,
-        max_length=config.model.n_ctx,
-        pad_token_id=config.model.pad_token_id,
-        eos_token_id=config.model.eos_token_id,
-        num_meta=len(encoded_meta),
-        chord_progression_vector=torch.tensor(
-            chord_embedding[tuple(chord_progression)], dtype=torch.float32
-        ),
-    )
-    logger.info("Finished generation")
+    if model_name == "musicrag_hf":
+        rag_model, question_encoder, generator = load_pretrained_model(config, model_factory)
+        generation_result = generate_note_sequence_rag(
+            model=rag_model.from_pretrained(
+                checkpoint_dir, question_encoder=question_encoder, generator=generator
+            ),
+            # 입력값은 [batch_size, sequence_length]
+            input_meta=torch.unsqueeze(torch.LongTensor(encoded_meta), dim=0),
+            num_generate=args.num_generate,
+            top_k=args.top_k,
+            top_p=args.top_p,
+            max_length=config.model.generator.max_position_embeddings,
+            pad_token_id=config.model.generator.pad_token_id,
+            eos_token_id=config.model.generator.eos_token_id,
+            n_docs=args.n_docs,
+        )
+    else:
+        generation_result = generate_note_sequence(
+            model=model_factory.create(name=config.model_name, checkpoint_dir=checkpoint_dir),
+            # 입력값은 [batch_size, sequence_length]
+            input_meta=torch.unsqueeze(torch.LongTensor(encoded_meta), dim=0),
+            num_generate=args.num_generate,
+            top_k=args.top_k,
+            top_p=args.top_p,
+            max_length=config.model.n_ctx,
+            pad_token_id=config.model.pad_token_id,
+            eos_token_id=config.model.eos_token_id,
+            num_meta=len(encoded_meta),
+            chord_progression_vector=torch.tensor(
+                chord_embedding[tuple(chord_progression)], dtype=torch.float32
+            ),
+        )
+        logger.info("Finished generation")
 
     date = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
     output_dir = output_dir.joinpath(date)

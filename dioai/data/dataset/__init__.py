@@ -10,7 +10,6 @@ from .dataset import (
     DPRDataset,
     GPT2ChordMetaToNoteDataset,
     RagDataset,
-    Seq2SeqDataset,
     meta_to_note_collate_fn,
 )
 
@@ -18,7 +17,6 @@ from .dataset import (
 class PozalabsDatasetFactory:
     dataset_map = {
         GPT2ChordMetaToNoteDataset.name: GPT2ChordMetaToNoteDataset,
-        Seq2SeqDataset.name: Seq2SeqDataset,
         BartDenoisingNoteDataset.name: BartDenoisingNoteDataset,
         BertForDPRDataset.name: BertForDPRDataset,
         DPRDataset.name: DPRDataset,

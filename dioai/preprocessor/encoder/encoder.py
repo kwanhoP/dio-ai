@@ -275,7 +275,10 @@ class MidiPerformanceEncoderWithInstrument(MidiPerformanceEncoder):
         event_ids = []
         for i in ids:
             if i >= self.unigram_vocab_size:
-                event_ids += self._ngrams[i - self.unigram_vocab_size]
+                try:
+                    event_ids += self._ngrams[i - self.unigram_vocab_size]
+                except IndexError:
+                    continue
             else:
                 event_ids.append(i)
 
@@ -285,7 +288,7 @@ class MidiPerformanceEncoderWithInstrument(MidiPerformanceEncoder):
             num_velocity_bins=self._num_velocity_bins,
         )
         for i in event_ids:
-            if i == 1:  # EOS
+            if i == 1 or i == 0:  # EOS and PAD
                 continue
             performance.append(self._encoding.decode_event(i - self.num_reserved_ids))
 

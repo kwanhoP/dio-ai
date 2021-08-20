@@ -123,7 +123,7 @@ def main_hf(args):
         bert_pretrained = bert_model.from_pretrained(config.bert_ckpt)
 
         trainer: transformers.Trainer = Trainer_hf(
-            model=model_factory.create_rag(config.model_name, config.model, bert_pretrained.bert),
+            model=model_factory.create_dpr(config.model_name, config.model, bert_pretrained.bert),
             args=config.training,
             train_dataset=dataset_factory.create(
                 config=config,

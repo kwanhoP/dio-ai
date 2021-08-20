@@ -23,7 +23,6 @@ from .tf_dataset import (
     BertForDPRTFDataset,
     GPT2ChordMetaToNoteTFDataset,
     RAGTFDataset,
-    TransformerDataset,
     gather_files,
 )
 
@@ -94,20 +93,6 @@ class GPT2ChordMetaToNoteDataset(BaseDataset):
             batch["num_meta"] = np.array([self.config.num_meta], dtype=np.int64)
             yield batch
 
-
-class Seq2SeqDataset(BaseDataset):
-    name = "seq2seq"
-
-    def __init__(
-        self, config: TransformersConfig, split: str, training: bool = True, shuffle: bool = False
-    ):
-        super().__init__(config=config, training=training, shuffle=shuffle)
-        self.tf_dataset = TransformerDataset(
-            self.config.data_dir,
-            split=split,
-            chord_embedding_path=self.config.chord_embedding_path,
-            num_meta=self.config.num_meta,
-        )
 
     def prepare_dataset(self) -> Iterator:
         tf_dataset = self.tf_dataset.build(**self.tf_dataset_build_args)
