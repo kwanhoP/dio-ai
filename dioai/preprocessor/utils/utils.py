@@ -653,20 +653,20 @@ def split_train_val(input: np.array, target: np.ndarray, val_ratio: float) -> np
     return splits
 
 
-def load_poza_meta(request_url: str, per_page: int = 1000) -> List[Dict[str, Any]]:
+def load_poza_meta(request_url: str, update_date:str, per_page: int = 1000) -> List[Dict[str, Any]]:
     return fetch_samples_from_backoffice(
-        request_url=request_url, per_page=per_page, params={"auto_changed": False}
+        request_url=request_url, update_date=update_date, per_page=per_page, params={"auto_changed": False}
     )
 
 
 def fetch_samples_from_backoffice(
-    request_url: str, per_page: int = 100, params: Optional[Dict[str, Any]] = None
+    request_url: str, update_date: str, per_page: int = 100, params: Optional[Dict[str, Any]] = None
 ) -> List[Dict[str, Any]]:
     page = 1
     result = []
     finished = False
     while not finished:
-        has_next, samples = _fetch_samples(request_url, page=page, per_page=per_page, params=params)
+        has_next, samples = _fetch_samples(request_url, update_date, page=page, per_page=per_page, params=params)
         result.extend(samples)
         finished = not has_next
         page += 1
@@ -674,9 +674,9 @@ def fetch_samples_from_backoffice(
 
 
 def _fetch_samples(
-    url, page: int = 1, per_page: int = 100, params: Optional[Dict[str, Any]] = None
+    url, date, page: int = 1, per_page: int = 100, params: Optional[Dict[str, Any]] = None
 ) -> Tuple[bool, List[Dict[str, Any]]]:
-    request_params = {"page": page, "per_page": per_page}
+    request_params = {"page": page, "per_page": per_page, "created_at": date, "updated_at": date}
     if params is not None:
         request_params.update(params)
 
