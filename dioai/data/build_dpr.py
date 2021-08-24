@@ -25,6 +25,7 @@ def get_parser() -> argparse.ArgumentParser:
     parser.add_argument("--index_out", default="note_dpr_index.faiss", type=str, help="index 저장 경로")
     parser.add_argument("--gpu_num", default=0, type=int, help="사용할 gpu 번호", choices=[0, 1, 2, 3])
     parser.add_argument("--dpr_ckpt", type=str, help="table 구성에 사용할 dpr ckpt")
+    parser.add_argument("--note_src_path", type=np.ndarray, help="table 구성에 사용할 note dataset")
     return parser
 
 
@@ -114,8 +115,11 @@ def save_note_dpr_index(args):
     bert_config = load_config(Path(config.bert_config_pth).expanduser(), "hf")
     bert_model = model_factory.create(bert_config.model_name, bert_config.model)
     bert_pretrained = bert_model.from_pretrained(config.bert_ckpt)
-    dpr_model = model_factory.create_rag(config.model_name, config.model, bert_pretrained.bert)
+    dpr_model = model_factory.create_dpr(config.model_name, config.model, bert_pretrained.bert)
     dpr_pretrained = dpr_model.from_pretrained(dpr_ckpt, bert_pretrained.bert)
+
+    # note2csv
+    mk_dpr_csv(args.note_src_path)
 
     # load dataset
     dataset = load_dataset("csv", data_files=[csv_path], split="train", column_names=["text"])
