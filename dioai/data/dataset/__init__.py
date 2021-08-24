@@ -7,7 +7,6 @@ from .dataset import (
     BartDenoisingNoteDataset,
     BartForRagDataset,
     BertForDPRDataset,
-    DPRDataset,
     GPT2ChordMetaToNoteDataset,
     RagDataset,
     meta_to_note_collate_fn,
@@ -19,8 +18,8 @@ class PozalabsDatasetFactory:
         GPT2ChordMetaToNoteDataset.name: GPT2ChordMetaToNoteDataset,
         BartDenoisingNoteDataset.name: BartDenoisingNoteDataset,
         BertForDPRDataset.name: BertForDPRDataset,
-        DPRDataset.name: DPRDataset,
-        RagDataset.name: RagDataset,
+        RagDataset.for_dpr: RagDataset,
+        RagDataset.for_rag: RagDataset,
         BartForRagDataset.name: BartForRagDataset,
     }
 

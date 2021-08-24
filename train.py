@@ -100,17 +100,17 @@ def main_hf(args):
             ),
             args=config.training,
             train_dataset=dataset_factory.create(
-                config=dpr_config,
-                split=dpr_config.train_split,
+                config=config,
+                split=config.train_split,
             ),
             eval_dataset=(
                 dataset_factory.create(
-                    config=dpr_config,
-                    split=dpr_config.eval_split,
+                    config=config,
+                    split=config.eval_split,
                     training=False,
                     shuffle=False,
                 )
-                if dpr_config.training.evaluation_strategy != transformers.EvaluationStrategy.NO
+                if config.training.evaluation_strategy != transformers.EvaluationStrategy.NO
                 else None
             ),
             use_cosine_annealing=config.use_cosine_annealing,

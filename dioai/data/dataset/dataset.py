@@ -336,15 +336,17 @@ class BertForDPRDataset(BaseDataset):
             yield batch
 
 
-class DPRDataset(BaseDataset):
-    name = "dpr_model_hf"
+
+class RagDataset(BaseDataset):
+    for_rag = "musicrag_hf"
+    for_dpr = "dpr_model_hf"
 
     def __init__(
         self,
-        config: Union[TransformersConfig, DPRConfig],
-        split: str,
-        training: bool = True,
-        shuffle: bool = False,
+        config,
+        split,
+        training=True,
+        shuffle=False,
     ):
         self.config = config
         self.training = training
@@ -358,37 +360,6 @@ class DPRDataset(BaseDataset):
         self.tf_dataset = RAGTFDataset(
             self.config.data_dir,
             split=split,
-        )
-
-    def prepare_dataset(self) -> Iterator:
-        tf_dataset = self.tf_dataset.build(**self.tf_dataset_build_args)
-        for batch in tf_dataset.as_numpy_iterator():
-            yield batch
-
-
-class RagDataset(BaseDataset):
-    name = "musicrag_hf"
-
-    def __init__(
-        self,
-        config,
-        split,
-        training=True,
-        shuffle=False,
-    ):
-        self.config = config
-        self.training = training
-        self.tf_dataset_build_args = dict(
-            batch_size=self.config.batch_size,
-            max_length=self.config.model.question_encoder["max_position_embeddings"],
-            pad_id=self.config.model.question_encoder["pad_token_id"],
-            training=training,
-            shuffle=shuffle,
-        )
-        self.tf_dataset = RAGTFDataset(
-            self.config.data_dir,
-            split=split,
-            for_rag=True,
         )
 
     def prepare_dataset(self) -> Iterator:
