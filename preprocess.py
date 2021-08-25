@@ -77,6 +77,12 @@ def add_pozalabs_argument_group(root_parser: argparse.ArgumentParser) -> None:
         default="https://backoffice.pozalabs.com",
         help="백오피스 API URL",
     )
+    group.add_argument(
+        "--update_date",
+        type=str,
+        default="1999-01-01",
+        help="업데이트 할 최신 날짜"
+    )
 
 
 def get_parser(dataset_name: str) -> argparse.ArgumentParser:
@@ -103,7 +109,10 @@ def main(args: argparse.Namespace) -> None:
     logger.info(f"Data: {dataset_name} | Preprocess Steps: {preprocess_steps}")
 
     if dataset_name in NO_PREPARATION_BEFORE_ENCODING:
-        dataset_extra_args = dict(backoffice_api_url=args.backoffice_api_url)
+        dataset_extra_args = dict(
+            backoffice_api_url=args.backoffice_api_url,
+            update_date=args.update_date
+        )
     else:
         dataset_extra_args = dict(
             chunk_midi_arguments=ChunkMidiArguments(

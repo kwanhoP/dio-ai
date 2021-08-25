@@ -397,6 +397,7 @@ class PozalabsPreprocessor(BasePreprocessor):
         meta_encoder: BaseMetaEncoder,
         note_sequence_encoder: MidiPerformanceEncoder,
         backoffice_api_url: str,
+        update_date: str,
         *args,
         **kwargs,
     ):
@@ -408,6 +409,7 @@ class PozalabsPreprocessor(BasePreprocessor):
             **kwargs,
         )
         self.backoffice_api_url = backoffice_api_url
+        self.update_date = update_date
 
     def _drop_keyswitch_note(self, note_seq) -> np.ndarray:
         key_switch_note_start = list(np.where(note_seq == KEY_SWITCH_VEL)[0])
@@ -467,7 +469,7 @@ class PozalabsPreprocessor(BasePreprocessor):
 
         sub_dir = get_sub_dir(root_dir, exclude=sub_dir_exclude)
         fetched_samples = utils.load_poza_meta(
-            self.backoffice_api_url + "/api/samples", per_page=2000
+            self.backoffice_api_url + "/api/samples", self.update_date, per_page=2000
         )
 
         if augment:
