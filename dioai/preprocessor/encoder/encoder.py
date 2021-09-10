@@ -1,15 +1,20 @@
 import collections
 import datetime
+from fractions import Fraction
 from pathlib import Path
 from typing import Any, List, Optional, Union
 
 import note_seq
+
+# https://github.com/magenta/magenta/blob/master/magenta/models/score2perf/score2perf.py#L39-L42
+import numpy as np
 import pretty_midi
 from magenta.models.score2perf.music_encoders import (
     MidiPerformanceEncoder as MagentaMidiPerformanceEncoder,
 )
 from tensor2tensor.data_generators import text_encoder
 
+from dioai.preprocessor.encoder.remi import utils
 from dioai.preprocessor.utils import get_inst_from_info, get_ts_from_info
 from dioai.preprocessor.utils.constants import (
     BPM_INTERVAL,
@@ -19,8 +24,6 @@ from dioai.preprocessor.utils.constants import (
     STEPS_PER_SECOND,
 )
 from dioai.preprocessor.utils.container import MidiInfo
-
-# https://github.com/magenta/magenta/blob/master/magenta/models/score2perf/score2perf.py#L39-L42
 
 pretty_midi.pretty_midi.MAX_TICK = 1e10
 
@@ -37,14 +40,22 @@ def encode_midi(filename: str) -> List[int]:
     return encode_seq
 
 
-def decode_midi(output_path, midi_info: MidiInfo, filename: Optional[str] = None):
-    decoder = MidiPerformanceEncoderWithInstrument()
-    output_path = Path(output_path)
-    decoder.decode(
-        output_path=output_path,
-        midi_info=midi_info,
-        origin_name=filename,
-    )
+def decode_midi(
+    output_path, midi_info: MidiInfo, filename: Optional[str] = None, decoder_name="remi"
+):
+
+    if decoder_name == "remi":
+        decoder = RemiEncoder(32)
+        print(midi_info.note_seq)
+        decoder.decode(midi_info.note_seq, output_path)
+    else:
+        decoder = MidiPerformanceEncoderWithInstrument()
+        output_path = Path(output_path)
+        decoder.decode(
+            output_path=output_path,
+            midi_info=midi_info,
+            origin_name=filename,
+        )
 
 
 def note_sequence_to_midi_file(midi_info: MidiInfo, sequence: note_seq.NoteSequence, output_file):
@@ -313,3 +324,71 @@ class MidiPerformanceEncoderWithInstrument(MidiPerformanceEncoder):
     @property
     def num_reserved_ids(self) -> int:
         return self._num_reserved_ids
+
+
+class RemiEncoder:
+    name = "remi"
+
+    def __init__(self, resolution):
+        self.event2word, self.word2event = utils.mk_remi_map(resolution)
+        self.position_resolution = resolution
+        self.default_tick_per_beat = 480
+        default_tick_per_bar = 3840
+        self.duration_bins = np.arange(
+            int(default_tick_per_bar / 4 / resolution),
+            3841,
+            int(default_tick_per_bar / 4 / resolution),
+            dtype=int,
+        )
+
+    def encode(self, midi_paths, sample_info=None):
+        chord_progression = sample_info["chord_progressions"]
+        audio_key = sample_info["audio_key"]
+        numerator = int(sample_info["time_signature"].split("/")[0])
+        denominator = int(sample_info["time_signature"].split("/")[1])
+        if denominator != 4:
+            ts = Fraction(numerator, denominator)  # 6/8 -> 3/4
+            numerator = ts.numerator
+        tick_per_bar = self.default_tick_per_beat * numerator
+        if sample_info is not None:
+            events = utils.extract_events(
+                midi_paths,
+                self.position_resolution,
+                self.duration_bins,
+                tick_per_bar,
+                chord_progression=chord_progression,
+                audio_key=audio_key,
+                use_backoffice_chord=True,
+            )
+        else:
+            events = utils.extract_events(
+                midi_paths,
+                self.position_resolution,
+                self.duration_bins,
+                tick_per_bar,
+                use_backoffice_chord=False,
+            )
+        words = []
+        for event in events:
+            e = "{}_{}".format(event.name, event.value)
+            if e in self.event2word:
+                words.append(self.event2word[e])
+            else:
+                # OOV
+                if event.name == "Note Velocity":
+                    # replace with max velocity based on our training data
+                    words.append(self.event2word["Note Velocity_31"])
+                else:
+                    # something is wrong
+                    # you should handle it for your own purpose
+                    print("OOV {}".format(e))
+        return np.array(words)
+
+    def decode(self, output_seq, output_path):
+        utils.write_midi(
+            output_seq,
+            self.word2event,
+            output_path,
+            DEFAULT_FRACTION=self.position_resolution,
+            DEFAULT_DURATION_BINS=self.duration_bins,
+        )

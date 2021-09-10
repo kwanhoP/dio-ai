@@ -438,7 +438,7 @@ class PozalabsPreprocessor(BasePreprocessor):
 
         return np.array(no_key_switch_note)
 
-    def encode_note_sequence(self, midi_path: Union[str, Path]) -> np.ndarray:
+    def encode_note_sequence(self, midi_path: Union[str, Path], sample_info: Dict) -> np.ndarray:
         # 키 스위치 노트 제거를 위한 override
         with tempfile.NamedTemporaryFile(suffix=Path(midi_path).suffix) as f:
             midi_obj = mido.MidiFile(midi_path)
@@ -449,7 +449,12 @@ class PozalabsPreprocessor(BasePreprocessor):
                 except IndexError:  # chord_track이 제거 된 경우
                     continue
             midi_obj.save(f.name)
-            note_seqence = np.array(self.note_sequence_encoder.encode(f.name))
+            if self.note_sequence_encoder.name == "remi":  # remi encoder 노트 시퀀스에 코드 진행 정보를 할당하기 위해
+                note_seqence = np.array(
+                    self.note_sequence_encoder.encode(midi_path, sample_info=sample_info)
+                )
+            else:
+                note_seqence = np.array(self.note_sequence_encoder.encode(f.name))
             if KEY_SWITCH_VEL in note_seqence:
                 note_seqence = self._drop_keyswitch_note(note_seqence)
 
@@ -582,10 +587,13 @@ class PozalabsPreprocessor(BasePreprocessor):
                 # 백오피스에는 등록되었으나 아직 다운로드 되지 않은 샘플은 건너뜀
                 if midi_path is None:
                     continue
-
-                encoding_output = self._preprocess_midi(
-                    sample_info=copied_sample_info, midi_path=augmented_midi_path
-                )
+                try:
+                    encoding_output = self._preprocess_midi(
+                        sample_info=copied_sample_info, midi_path=augmented_midi_path
+                    )
+                except (ValueError, IndexError) as e:
+                    print(f"{e}: {augmented_midi_path}")
+                    continue
                 output_dir = encode_tmp_dir.joinpath(f"{idx:04d}")
                 output_dir.mkdir(exist_ok=True, parents=True)
                 np.save(output_dir.joinpath(f"input_{sample_info_idx}"), encoding_output.meta)
@@ -606,7 +614,9 @@ class PozalabsPreprocessor(BasePreprocessor):
         )
         encoded_meta.append(chord_progression_md5)
         encoded_meta: np.ndarray = np.array(encoded_meta, dtype=object)
-        encoded_note_sequence = np.array(self.encode_note_sequence(midi_path), dtype=np.int16)
+        encoded_note_sequence = np.array(
+            self.encode_note_sequence(midi_path, sample_info), dtype=np.int16
+        )
         return EncodingOutput(meta=encoded_meta, note_sequence=encoded_note_sequence)
 
     @staticmethod

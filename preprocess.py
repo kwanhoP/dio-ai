@@ -24,6 +24,8 @@ def get_root_parser() -> argparse.ArgumentParser:
     )
     root_parser.add_argument("--augment", action="store_true", help="데이터 어그멘테이션 수행 여부")
     root_parser.add_argument("--steps", nargs="+", default=PREPROCESS_STEPS, help="전처리 수행할 단계")
+    root_parser.add_argument("--resolution", default=32, help="remi 전처리 시 인코딩/디코딩 resolution")
+    root_parser.add_argument("--encoder_name", default="midi", help="사용할 인코더 이름")
     return root_parser
 
 
@@ -106,6 +108,8 @@ def main(args: argparse.Namespace) -> None:
     root_dir = prepare_path(args.root_dir)
     pipeline = PreprocessPipeline(dataset_name)
     preprocess_steps = args.steps
+    remi_resolution = int(args.resolution)
+    encoder_name = args.encoder_name
     logger.info(f"Data: {dataset_name} | Preprocess Steps: {preprocess_steps}")
 
     if dataset_name in NO_PREPARATION_BEFORE_ENCODING:
@@ -138,6 +142,8 @@ def main(args: argparse.Namespace) -> None:
         num_cores=args.num_cores,
         augment=args.augment,
         preprocess_steps=preprocess_steps,
+        remi_resolution=remi_resolution,
+        encoder_name=encoder_name,
         **dataset_extra_args,
     )
 

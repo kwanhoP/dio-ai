@@ -6,7 +6,7 @@ from typing import List, Union
 from dioai.logger import logger
 
 from ..utils import dependency
-from .encoder import MetaEncoderFactory, MidiPerformanceEncoder
+from .encoder import MetaEncoderFactory, MidiPerformanceEncoder, RemiEncoder
 from .parser import MetaParserFactory
 from .preprocessor import PreprocessorFactory
 
@@ -23,9 +23,13 @@ class PreprocessPipeline:
         preprocess_steps: List[str],
         num_cores: int = max(4, cpu_count() - 2),
         augment: bool = False,
+        remi_resolution: int = 32,
+        encoder_name: str = "midi",
         *args,
         **kwargs,
     ):
+        ENCODER_MAP = {"remi": RemiEncoder(remi_resolution), "midi": MidiPerformanceEncoder()}
+
         meta_parser = MetaParserFactory().create(
             self.dataset_name,
             # meta_csv_path: pozalabs2 데이터셋을 위한 인자
@@ -36,7 +40,7 @@ class PreprocessPipeline:
             self.dataset_name,
             meta_parser=meta_parser,
             meta_encoder=meta_encoder,
-            note_sequence_encoder=MidiPerformanceEncoder(),
+            note_sequence_encoder=ENCODER_MAP[encoder_name],
             **kwargs,
         )
         logger.info(f"[{self.dataset_name}] Initialized preprocessor")

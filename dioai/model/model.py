@@ -2,7 +2,6 @@ import re
 from typing import Any, Dict, List, Union
 
 import numpy as np
-import pytorch_lightning as pl
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
@@ -43,16 +42,8 @@ from transformers.tokenization_utils_base import BatchEncoding
 # https://github.com/huggingface/transformers/blob/master/src/transformers/models/gpt2/modeling_gpt2.py#L804
 from transformers.utils.model_parallel_utils import assert_device_map, get_device_map
 
-from dioai.data.dataset.dataset import RelativeTransformerDataset
-
 # from . import PozalabsModelFactory
-from dioai.model.layer import (
-    Decoder,
-    DPROutput,
-    Encoder,
-    SmoothCrossEntropyLoss,
-    get_masked_with_pad_tensor,
-)
+from dioai.model.layer import DPROutput
 from dioai.preprocessor.encoder.meta import Offset
 
 # from ...train import load_config
@@ -294,58 +285,6 @@ class GPT2ChordMetaToNoteModel(GPT2BaseModel):
             "num_meta": kwargs.get("num_meta"),
             "chord_progression_vector": kwargs.get("chord_progression_vector"),
         }
-
-
-class ConditionalRelativeTransformer(pl.LightningModule):
-    name = "condition_relative_transformer_pl"
-
-    def __init__(self, config):
-        super().__init__()
-        self.training = config.training
-        self.config = config
-        self.max_seq = config.n_ctx
-        self.embedding_dim = config.n_embd
-        self.note_vocab_size = config.note_vocab_size
-        self.meta_vocab_size = config.meta_vocab_size
-        self.Encoder = Encoder(self.config)
-        self.Decoder = Decoder(self.config)
-        self.fc = torch.nn.Linear(self.embedding_dim, self.note_vocab_size)
-        self.learning_rate = config.learning_rate
-        self.batch_size = config.batch_size
-
-    def forward(self, meta, note):
-        if self.training:
-            _, _, look_ahead_mask = get_masked_with_pad_tensor(
-                self.max_seq, note, note, self.config.pad_token_id
-            )
-            enc_out, w = self.Encoder(meta, mask=None)
-            dec_out = self.Decoder(note, enc_out, mask=None, lookup_mask=look_ahead_mask)
-            fc = self.fc(dec_out)
-            return (
-                fc.contiguous()
-                if self.training
-                else (fc.contiguous(), [weight.contiguous() for weight in w])
-            )
-
-    def training_step(self, batch, idx):
-        meta, note_in, note_trg = batch
-        outputs = self(meta, note_in)
-        metric = SmoothCrossEntropyLoss(0.1, self.note_vocab_size, self.config.pad_token_id)
-        loss = metric(outputs, note_trg)
-        self.log("train_loss", loss)
-        return loss
-
-    def configure_optimizers(self):
-        optimizer = torch.optim.Adam(self.parameters(), lr=self.learning_rate)
-        scheduler = torch.optim.lr_scheduler.StepLR(optimizer, step_size=20, gamma=0.1)
-        return [optimizer], [scheduler]
-
-    def train_dataloader(self):
-        train_dataset = RelativeTransformerDataset(self.config)
-        train_loader = torch.utils.data.DataLoader(
-            train_dataset, self.batch_size, shuffle=False, num_workers=1
-        )
-        return train_loader
 
 
 class BartDenoisingNoteModel(BartForConditionalGeneration):

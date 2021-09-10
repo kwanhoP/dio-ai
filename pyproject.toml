@@ -29,6 +29,7 @@ music21 = "^6.7.1"
 pytorch-lightning = "^1.2.7"
 wandb = "^0.10.30"
 fairseq = "^0.10.2"
+miditoolkit = "^0.1.14"
 
 [tool.poetry.dev-dependencies]
 pre-commit = "^2.10.0"

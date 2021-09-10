@@ -13,6 +13,7 @@ import torch
 
 from dioai.config import TransformersConfig
 from dioai.data.dataset.dataset import META_OFFSET
+from dioai.data.utils.constants import RagVocab
 from dioai.logger import logger
 from dioai.model import ConditionalRelativeTransformer, ModelType, PozalabsModelFactory
 from dioai.model.layer import beam_search
@@ -26,7 +27,7 @@ from dioai.preprocessor.encoder.meta import (
 from dioai.preprocessor.utils import constants
 from dioai.preprocessor.utils.container import MidiInfo, MidiMeta
 from train import load_config
-from dioai.data.utils.constants import RagVocab
+
 
 def get_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser("Midi generation")
@@ -81,6 +82,9 @@ def get_parser() -> argparse.ArgumentParser:
     parser.add_argument("--temperature", type=int, default=1, help="temperature scaling on softmax")
     parser.add_argument(
         "--n_docs", type=int, default=10, help="number of retriver note sequence using RAG"
+    )
+    parser.add_argument(
+        "--decoder_name", type=str, default="remi", help="decoder name ['remi','midi']"
     )
     return parser
 
@@ -188,7 +192,11 @@ def generate_note_sequence_rag(
 
 
 def decode_note_sequence(
-    generation_result: List[torch.Tensor], num_meta: int, meta, output_dir: Union[str, Path]
+    generation_result: List[torch.Tensor],
+    num_meta: int,
+    meta,
+    output_dir: Union[str, Path],
+    decoder_name: str,
 ):
     for idx, raw_output in enumerate(generation_result):
         # TODO: 인덱싱으로 접근하지 않게 수정하기
@@ -197,6 +205,7 @@ def decode_note_sequence(
         decode_midi(
             output_path=Path(output_dir).joinpath(f"decoded_{idx:03d}.mid"),
             midi_info=MidiInfo(**encoded_meta_dict, note_seq=note_sequence.numpy()),
+            decoder_name=decoder_name,
         )
 
 
@@ -225,6 +234,9 @@ def load_pretrained_model(config, model_factory):
     )
 
     return rag_model, question_encoder, generator
+
+
+REMI_META_OFFSET = 64
 
 
 def main_hf(args: argparse.Namespace) -> None:
@@ -266,6 +278,8 @@ def main_hf(args: argparse.Namespace) -> None:
     encoded_meta = encode_meta(
         meta_encoder=meta_encoder_factory.create(dataset_name), midi_meta=midi_meta
     )
+    if args.decoder_name == "remi":
+        encoded_meta = list(np.array(encoded_meta) + REMI_META_OFFSET)
     logger.info("Encoded meta")
 
     logger.info("Start generation")
@@ -315,6 +329,7 @@ def main_hf(args: argparse.Namespace) -> None:
         num_meta=len(encoded_meta),
         meta=encoded_meta,
         output_dir=output_dir,
+        decoder_name=args.decoder_name,
     )
     logger.info("Finished decoding")
 

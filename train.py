@@ -6,14 +6,10 @@ from typing import Union
 import sentry_sdk
 import tensorflow as tf
 import transformers
-from pytorch_lightning import Trainer
-from pytorch_lightning.loggers import WandbLogger
-from pytorch_lightning.plugins import DDPPlugin
 
-import wandb
 from dioai.config import PytorchlightConfig, TransformersConfig
 from dioai.data.dataset import PozalabsDatasetFactory
-from dioai.model import ConditionalRelativeTransformer, ModelType, PozalabsModelFactory
+from dioai.model import ModelType, PozalabsModelFactory
 from dioai.trainer import Trainer_hf
 
 
@@ -168,32 +164,7 @@ def main_hf(args):
     trainer.train(resume_from_checkpoint=config.fine_tune_ckpt)
 
 
-def main_pl(args):
-    os.environ["PYTHONWARNINGS"] = "ignore:semaphore_tracker:UserWarning"
-
-    model_factory = PozalabsModelFactory()
-    config = load_config(args.config_path, args.model_type)
-    wandb_logger = WandbLogger(name=config.wandb_name, project=config.wandb_project)
-
-    trainer = Trainer(
-        logger=wandb_logger,
-        gpus=config.n_gpu,
-        fast_dev_run=False,
-        accelerator="ddp",
-        plugins=DDPPlugin(find_unused_parameters=False),
-    )
-    if config.resume_training:
-        wandb.init(project="pytorchlightning", resume=True)
-        wandb.restore(config.ckpt_pth)
-        models = ConditionalRelativeTransformer.load_from_checkpoint(config.ckpt_pth, config=config)
-    else:
-        models = model_factory.create(config.model_name, config)
-    trainer.fit(models)
-
-
 if __name__ == "__main__":
     known_args, _ = get_parser().parse_known_args()
     if known_args.model_type == ModelType.HuggingFace.value:
         main_hf(known_args)
-    elif known_args.model_type == ModelType.PytorchLightning.value:
-        main_pl(known_args)
