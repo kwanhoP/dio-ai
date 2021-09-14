@@ -12,11 +12,9 @@ import requests
 import torch
 
 from dioai.config import TransformersConfig
-from dioai.data.dataset.dataset import META_OFFSET
 from dioai.data.utils.constants import RagVocab
 from dioai.logger import logger
-from dioai.model import ConditionalRelativeTransformer, ModelType, PozalabsModelFactory
-from dioai.model.layer import beam_search
+from dioai.model import ModelType, PozalabsModelFactory
 from dioai.preprocessor.encoder import BaseMetaEncoder, MetaEncoderFactory, decode_midi
 from dioai.preprocessor.encoder.meta import (
     ATTR_ALIAS,
@@ -236,7 +234,7 @@ def load_pretrained_model(config, model_factory):
     return rag_model, question_encoder, generator
 
 
-REMI_META_OFFSET = 64
+REMI_META_OFFSET = 66
 
 
 def main_hf(args: argparse.Namespace) -> None:
@@ -334,58 +332,7 @@ def main_hf(args: argparse.Namespace) -> None:
     logger.info("Finished decoding")
 
 
-def main_pl(args):
-    output_dir = Path(args.output_dir).expanduser()
-    config = load_config(args.config_path, args.model_type)
-    models = ConditionalRelativeTransformer.load_from_checkpoint(config.ckpt_pth, config=config)
-
-    is_pozalabs_inst = args.inst in constants.POZA_INST_MAP
-    dataset_name = "pozalabs" if is_pozalabs_inst else "reddit"
-    logger.info(f"Using Encoder for {dataset_name}")
-
-    meta_encoder_factory = MetaEncoderFactory()
-    midi_meta = parse_meta(**vars(args), chord_progression="unknown")
-    logger.info(f"Generating {args.num_generate} samples using following meta:\n{midi_meta.dict()}")
-
-    encoded_meta = encode_meta(
-        meta_encoder=meta_encoder_factory.create(dataset_name), midi_meta=midi_meta
-    )
-    logger.info("Encoded meta")
-    encoded_meta_shift = torch.tensor(encoded_meta, dtype=torch.long) - META_OFFSET
-    generation_result = []
-    for _ in range(args.num_generate):
-        result = beam_search(
-            config.sos_token_id,
-            config.pad_token_id,
-            encoded_meta_shift.view(1, -1),
-            config.n_ctx,
-            models,
-            config.note_vocab_size,
-            args.beam_size,
-            args.temperature,
-        )
-        generation_result.append(result)
-
-    logger.info("Finished generation")
-
-    date = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
-    output_dir = output_dir.joinpath(date)
-    output_dir.mkdir(exist_ok=True, parents=True)
-
-    logger.info("Start decoding")
-    for idx, raw_output in enumerate(generation_result):
-        note_sequence = raw_output
-        encoded_meta_dict = sub_offset(torch.tensor(encoded_meta))
-        decode_midi(
-            output_path=Path(output_dir).joinpath(f"decoded_{idx:03d}.mid"),
-            midi_info=MidiInfo(**encoded_meta_dict, note_seq=note_sequence.numpy()),
-        )
-    logger.info("Finished decoding")
-
-
 if __name__ == "__main__":
     known_args, _ = get_parser().parse_known_args()
     if known_args.model_type == ModelType.HuggingFace.value:
         main_hf(known_args)
-    elif known_args.model_type == ModelType.PytorchLightning.value:
-        main_pl(known_args)

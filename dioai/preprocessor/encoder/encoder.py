@@ -326,6 +326,9 @@ class MidiPerformanceEncoderWithInstrument(MidiPerformanceEncoder):
         return self._num_reserved_ids
 
 
+REMI_EOS_TOKEN = 1
+
+
 class RemiEncoder:
     name = "remi"
 
@@ -382,6 +385,7 @@ class RemiEncoder:
                     # something is wrong
                     # you should handle it for your own purpose
                     print("OOV {}".format(e))
+        words.append(REMI_EOS_TOKEN)  # eos token
         return np.array(words)
 
     def decode(self, output_seq, output_path):

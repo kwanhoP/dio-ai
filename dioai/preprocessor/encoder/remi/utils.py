@@ -415,7 +415,10 @@ def item2event(groups, DEFAULT_FRACTION, DEFAULT_DURATION_BINS):
 def word_to_event(words, word2event):
     events = []
     for word in words:
-        event_name, event_value = word2event.get(word).split("_")
+        try:
+            event_name, event_value = word2event[word].split("_")
+        except KeyError:
+            continue
         events.append(Event(event_name, None, event_value, None))
     return events
 
@@ -585,7 +588,7 @@ def mk_remi_map(resolution):
     for i in range(1, resolution + 1):
         event.append(f"Position_{i}/{resolution}")
 
-    event2word = {k: v for k, v in zip(event, range(len(event)))}
-    word2event = {v: k for k, v in zip(event, range(len(event)))}
+    event2word = {k: v for k, v in zip(event, range(2, len(event) + 2))}
+    word2event = {v: k for k, v in zip(event, range(2, len(event) + 2))}
 
     return event2word, word2event
