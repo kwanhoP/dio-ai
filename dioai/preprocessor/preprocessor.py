@@ -200,6 +200,24 @@ class RedditPreprocessor(BasePreprocessor):
             **kwargs,
         )
 
+    def encode_note_sequence(self, midi_path: Union[str, Path]) -> np.ndarray:
+        # remi의 경우 기존 midi_path를 입력으로 받아, augment key에 대응되는 chord 구한다
+        with tempfile.NamedTemporaryFile(suffix=Path(midi_path).suffix) as f:
+            midi_obj = mido.MidiFile(midi_path)
+            for idx in range(len(midi_obj.tracks)):
+                try:
+                    if "chord" in str(midi_obj.tracks[idx]):
+                        midi_obj.tracks.pop(idx)
+                except IndexError:  # chord_track이 제거 된 경우
+                    continue
+            midi_obj.save(f.name)
+            if self.note_sequence_encoder.name == "remi":
+                note_seqence = np.array(self.note_sequence_encoder.encode(midi_path))
+            else:
+                note_seqence = np.array(self.note_sequence_encoder.encode(f.name))
+
+            return note_seqence
+
     def preprocess(
         self,
         root_dir: Union[str, Path],
@@ -455,8 +473,8 @@ class PozalabsPreprocessor(BasePreprocessor):
                 )
             else:
                 note_seqence = np.array(self.note_sequence_encoder.encode(f.name))
-            if KEY_SWITCH_VEL in note_seqence:
-                note_seqence = self._drop_keyswitch_note(note_seqence)
+                if KEY_SWITCH_VEL in note_seqence:
+                    note_seqence = self._drop_keyswitch_note(note_seqence)
 
             return note_seqence
 

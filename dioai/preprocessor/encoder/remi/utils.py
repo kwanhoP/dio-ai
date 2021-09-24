@@ -1,11 +1,15 @@
 import copy
+import json
 import re
 from fractions import Fraction
+from typing import Dict
 
 import miditoolkit
+import mido
 import numpy as np
 
 from dioai.preprocessor.encoder.remi import chord_recognition, constant
+from dioai.preprocessor.encoder.remi.exceptions import InvalidMidiError, InvalidMidiErrorMessage
 
 # parameters for input
 DEFAULT_VELOCITY_BINS = np.linspace(0, 128, 32 + 1, dtype=np.int)
@@ -19,12 +23,13 @@ def extract_events(
     input_path,
     position_resolution,
     duration_bins,
-    tick_per_bar,
-    chord_progression,
-    audio_key,
+    tick_per_bar=None,
+    tick_per_beat=None,
+    chord_progression=None,
+    audio_key=None,
     use_backoffice_chord=True,
 ):
-    note_items, tempo_items = read_items(input_path)
+    note_items, tempo_items = read_items(input_path, tick_per_beat)
     max_time = note_items[-1].end
     if not use_backoffice_chord:
         chord_items = extract_chords(note_items)
@@ -215,7 +220,7 @@ class Item(object):
 
 
 # read notes and tempo changes from midi (assume there is only one track)
-def read_items(file_path):
+def read_items(file_path, tick_per_beat):
     midi_obj = miditoolkit.midi.parser.MidiFile(file_path)
     # note
     note_items = []
@@ -242,7 +247,7 @@ def read_items(file_path):
     # expand to all beat
     max_tick = tempo_items[-1].start
     existing_ticks = {item.start: item.pitch for item in tempo_items}
-    wanted_ticks = np.arange(0, max_tick + 1, DEFAULT_RESOLUTION)
+    wanted_ticks = np.arange(0, max_tick + 1, tick_per_beat)
     output = []
     for tick in wanted_ticks:
         if tick in existing_ticks:
@@ -276,13 +281,23 @@ def extract_chords(items):
     chords = method.extract(notes=items)
     output = []
     for chord in chords:
+        # chord: List [start tick, end tick, chord info]
+        # chord info: str 'root note/base note'
+        # root note: str 'f#:m'
+        pitch = chord[2].split("/")[0]
+        chord_pitch = pitch.split(":")[0]
+        chord_tone = pitch.split(":")[1]
+        if chord_tone == "M":
+            pitch = chord_pitch
+        else:
+            pitch = chord_pitch + chord_tone
         output.append(
             Item(
                 name="Chord",
                 start=chord[0],
                 end=chord[1],
                 velocity=None,
-                pitch=chord[2].split("/")[0],
+                pitch=pitch,
             )
         )
     return output
@@ -592,3 +607,94 @@ def mk_remi_map(resolution):
     word2event = {v: k for k, v in zip(event, range(2, len(event) + 2))}
 
     return event2word, word2event
+
+
+def add_flat_chord2map(event2word: Dict):
+    """
+    플랫 코드를 # 코드 인덱스에 할당
+    ex. Ab -> G#
+    """
+
+    flat_chord = ["Chord_ab:", "Chord_bb:", "Chord_db:", "Chord_eb:", "Chord_gb:"]
+    scale = ["", "maj", "maj7", "7", "dim", "dim7", "aug", "m", "m7"]
+
+    flat_chords = []
+    for c in flat_chord:
+        for s in scale:
+            flat_chords.append(c + s)
+
+    for c in flat_chords:
+        scale = c.split(":")[1]
+        key = c.split(":")[0].split("_")[1][0]
+        c = c.replace(":", "")
+        if c.startswith("Chord_ab"):
+            if scale == "" or scale == "maj":
+                event2word[c] = event2word["Chord_g#"]
+            elif scale == "maj7" or scale == "7":
+                event2word[c] = event2word["Chord_g#7"]
+            elif scale == "dim" or scale == "dim7":
+                event2word[c] = event2word["Chord_g#dim"]
+            elif scale == "aug":
+                event2word[c] = event2word["Chord_g#aug"]
+            elif scale == "m" or scale == "m7":
+                event2word[c] = event2word["Chord_g#m"]
+        else:
+            if scale == "" or scale == "maj":
+                new_key = chr(ord(key) - 1)
+                word = "Chord_" + new_key + "#"
+                event2word[c] = event2word[word]
+            elif scale == "maj7" or scale == "7":
+                new_key = chr(ord(key) - 1)
+                word = "Chord_" + new_key + "#7"
+                event2word[c] = event2word[word]
+            elif scale == "dim" or scale == "dim7":
+                new_key = chr(ord(key) - 1)
+                word = "Chord_" + new_key + "#dim"
+                event2word[c] = event2word[word]
+            elif scale == "aug":
+                new_key = chr(ord(key) - 1)
+                word = "Chord_" + new_key + "#aug"
+                event2word[c] = event2word[word]
+            elif scale == "m" or scale == "m7":
+                new_key = chr(ord(key) - 1)
+                word = "Chord_" + new_key + "#m"
+                event2word[c] = event2word[word]
+
+    return event2word
+
+
+def get_meta_message(meta_track: mido.MidiTrack, event_type: str) -> mido.MetaMessage:
+    def _check_unique_meta_message(_meta_messages):
+        unique_encoded_messages = set(json.dumps(vars(_m)).encode() for _m in _meta_messages)
+        if len(unique_encoded_messages) != 1:
+            return False
+        return True
+
+    def _get_unique_tempos(_meta_messages):
+        """pretty_midi.pretty_midi L#122 _load_tempo_changes() 참조"""
+        _result = []
+        for _message in _meta_messages:
+            if not _result:
+                _result.append(_message)
+            else:
+                if _result[-1].tempo != _message.tempo:
+                    _result.append(_message)
+        return _result
+
+    messages = [event for event in meta_track if event.type == event_type]
+    if event_type == "set_tempo":
+        messages = _get_unique_tempos(messages)
+
+    if not _check_unique_meta_message(messages):
+        raise InvalidMidiError(
+            InvalidMidiErrorMessage.duplicate_meta.value.format(
+                event_type=constant.MIDI_EVENT_LABEL[event_type]
+            )
+        )
+
+    return messages.pop()
+
+
+def get_time_signature(meta_message: mido.MetaMessage):
+    attrs = ("numerator", "denominator")
+    return [getattr(meta_message, attr) for attr in attrs]
