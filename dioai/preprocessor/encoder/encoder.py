@@ -41,6 +41,14 @@ def encode_midi(filename: str) -> List[int]:
     return encode_seq
 
 
+def encode_remi_for_bart(midi_path: str, resolution, sample_info) -> List[int]:
+
+    encoder = RemiEncoder(resolution)
+    encode_seq = encoder.encode_bart(midi_path, sample_info=sample_info)
+
+    return encode_seq
+
+
 def decode_midi(
     output_path, midi_info: MidiInfo, filename: Optional[str] = None, decoder_name="remi"
 ):
@@ -375,6 +383,46 @@ class RemiEncoder:
             use_backoffice_chord=False if sample_info is None else True,
         )
 
+        words = []
+        for event in events:
+            e = "{}_{}".format(event.name, event.value)
+            if e in self.event2word:
+                words.append(self.event2word[e])
+            else:
+                # OOV
+                if event.name == "Note Velocity":
+                    # replace with max velocity based on our training data
+                    words.append(self.event2word["Note Velocity_31"])
+                else:
+                    # something is wrong
+                    # you should handle it for your own purpose
+                    print("OOV {}".format(e))
+        words.append(REMI_EOS_TOKEN)  # eos token
+        return np.array(words)
+
+    def encode_bart(self, midi_paths, sample_info=None):
+
+        mido_file = mido.MidiFile(midi_paths)
+        tick_per_beat = mido_file.ticks_per_beat
+        chord_progression = sample_info["chord_progressions"]
+        numerator = mido_file.tracks[0][1].numerator
+        denominator = mido_file.tracks[0][1].denominator
+        try:
+            audio_key = mido_file.tracks[0][2].key
+        except AttributeError:
+            audio_key = "C"
+        if denominator == 8:
+            numerator = numerator / 2
+        tick_per_bar = tick_per_beat * numerator
+        events = utils.extract_events(
+            midi_paths,
+            self.position_resolution,
+            self.duration_bins,
+            tick_per_bar,
+            chord_progression=chord_progression,
+            audio_key=audio_key,
+            use_backoffice_chord=False,
+        )
         words = []
         for event in events:
             e = "{}_{}".format(event.name, event.value)
