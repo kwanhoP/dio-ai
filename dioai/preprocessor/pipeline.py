@@ -41,6 +41,7 @@ class PreprocessPipeline:
             meta_parser=meta_parser,
             meta_encoder=meta_encoder,
             note_sequence_encoder=ENCODER_MAP[encoder_name],
+            encoder_name=encoder_name,
             **kwargs,
         )
         logger.info(f"[{self.dataset_name}] Initialized preprocessor")

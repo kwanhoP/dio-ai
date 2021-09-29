@@ -26,6 +26,8 @@ from dioai.preprocessor.utils import constants
 from dioai.preprocessor.utils.container import MidiInfo, MidiMeta
 from train import load_config
 
+REMI_META_OFFSET = 72
+
 
 def get_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser("Midi generation")
@@ -202,7 +204,9 @@ def decode_note_sequence(
         note_sequence = raw_output[num_meta:]
         decode_midi(
             output_path=Path(output_dir).joinpath(f"decoded_{idx:03d}.mid"),
-            midi_info=MidiInfo(**encoded_meta_dict, note_seq=note_sequence.numpy()),
+            midi_info=MidiInfo(**encoded_meta_dict, note_seq=note_sequence.numpy())
+            if decoder_name == "midi"
+            else MidiInfo(*meta, note_seq=note_sequence.numpy()),
             decoder_name=decoder_name,
         )
 
@@ -232,9 +236,6 @@ def load_pretrained_model(config, model_factory):
     )
 
     return rag_model, question_encoder, generator
-
-
-REMI_META_OFFSET = 66
 
 
 def main_hf(args: argparse.Namespace) -> None:

@@ -26,6 +26,7 @@ MIDI_EXTENSIONS = (".mid", ".MID", ".midi", ".MIDI")
 KEY_SWITCH_VEL = 358
 NOTE_OFF_START = 129
 NOTE_OFF_END = 229
+REMI_META_OFFSET = 72
 
 
 class OutputSubDirName(str, enum.Enum):
@@ -189,6 +190,7 @@ class RedditPreprocessor(BasePreprocessor):
         meta_parser: BaseMetaParser,
         meta_encoder: BaseMetaEncoder,
         note_sequence_encoder: MidiPerformanceEncoder,
+        encoder_name: str,
         *args,
         **kwargs,
     ):
@@ -196,9 +198,11 @@ class RedditPreprocessor(BasePreprocessor):
             meta_parser=meta_parser,
             meta_encoder=meta_encoder,
             note_sequence_encoder=note_sequence_encoder,
+            encoder_name=encoder_name,
             *args,
             **kwargs,
         )
+        self.encoder_name = encoder_name
 
     def encode_note_sequence(self, midi_path: Union[str, Path]) -> np.ndarray:
         # remi의 경우 기존 midi_path를 입력으로 받아, augment key에 대응되는 chord 구한다
@@ -343,6 +347,8 @@ class RedditPreprocessor(BasePreprocessor):
 
     def _preprocess_midi(self, midi_path: Union[str, Path]):
         encoded_meta: List[Union[int, str]] = self._encode_meta(self._parse_meta(midi_path))
+        if self.encoder_name == "remi":
+            encoded_meta = list(np.array(encoded_meta) + REMI_META_OFFSET)  # remi offset 조정
         encoded_meta.append(constants.UNKNOWN)
         encoded_meta: np.ndarray = np.array(encoded_meta, dtype=object)
         encoded_note_sequence = np.array(self.encode_note_sequence(midi_path), dtype=np.int16)
@@ -414,6 +420,7 @@ class PozalabsPreprocessor(BasePreprocessor):
         meta_parser: BaseMetaParser,
         meta_encoder: BaseMetaEncoder,
         note_sequence_encoder: MidiPerformanceEncoder,
+        encoder_name: str,
         backoffice_api_url: str,
         update_date: str,
         *args,
@@ -428,6 +435,7 @@ class PozalabsPreprocessor(BasePreprocessor):
         )
         self.backoffice_api_url = backoffice_api_url
         self.update_date = update_date
+        self.encoder_name = encoder_name
 
     def _drop_keyswitch_note(self, note_seq) -> np.ndarray:
         key_switch_note_start = list(np.where(note_seq == KEY_SWITCH_VEL)[0])
@@ -630,6 +638,8 @@ class PozalabsPreprocessor(BasePreprocessor):
             if midi_meta.chord_progression != constants.UNKNOWN
             else constants.UNKNOWN
         )
+        if self.encoder_name == "remi":
+            encoded_meta = list(np.array(encoded_meta) + REMI_META_OFFSET)  # remi offset 조정
         encoded_meta.append(chord_progression_md5)
         encoded_meta: np.ndarray = np.array(encoded_meta, dtype=object)
         encoded_note_sequence = np.array(

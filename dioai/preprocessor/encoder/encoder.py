@@ -33,6 +33,12 @@ pretty_midi.pretty_midi.MAX_TICK = 1e10
 _PRETTY_MIDI_MAJOR_TO_MINOR_OFFSET = 12
 _START_OFFSET = 0
 
+# For remi encoder
+REMI_EOS_TOKEN = 1
+REMI_TS_4_4 = 565
+REMI_TS_3_4 = 564
+REMI_TS_6_8 = 572
+
 
 def encode_midi(filename: str) -> List[int]:
     encoder = MidiPerformanceEncoderWithInstrument()
@@ -334,9 +340,6 @@ class MidiPerformanceEncoderWithInstrument(MidiPerformanceEncoder):
         return self._num_reserved_ids
 
 
-REMI_EOS_TOKEN = 1
-
-
 class RemiEncoder:
     name = "remi"
 
@@ -440,11 +443,23 @@ class RemiEncoder:
         words.append(REMI_EOS_TOKEN)  # eos token
         return np.array(words)
 
-    def decode(self, output_path, midi_info, origin_name=None):
+    def decode(
+        self,
+        output_path,
+        midi_info,
+        origin_name=None,
+    ):
+        time_sig = midi_info.time_signature
+        if time_sig == REMI_TS_4_4:
+            beat_per_bar = 4
+        elif time_sig == REMI_TS_3_4 or time_sig == REMI_TS_6_8:
+            beat_per_bar = 3
+
         utils.write_midi(
             midi_info.note_seq,
             self.word2event,
             output_path,
             DEFAULT_FRACTION=self.position_resolution,
             DEFAULT_DURATION_BINS=self.duration_bins,
+            beat_per_bar=beat_per_bar,
         )
