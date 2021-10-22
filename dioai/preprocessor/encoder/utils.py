@@ -2,7 +2,7 @@ import copy
 import json
 import re
 from fractions import Fraction
-from typing import Dict
+from typing import Dict, List
 
 import miditoolkit
 import mido
@@ -698,3 +698,47 @@ def get_meta_message(meta_track: mido.MidiTrack, event_type: str) -> mido.MetaMe
 def get_time_signature(meta_message: mido.MetaMessage):
     attrs = ("numerator", "denominator")
     return [getattr(meta_message, attr) for attr in attrs]
+
+
+def events2compound_word(events: List, event2word_cp) -> np.ndarray:
+
+    for idx, event in enumerate(events):
+        tmp = np.zeros(7, dtype=int)
+        e = "{}_{}".format(event.name, event.value)
+        if event.name == "Bar":
+            tmp[1] = event2word_cp[e]
+            tmp[0] = event2word_cp["type_Metrical"]
+        elif event.name == "Position":
+            tmp[1] = event2word_cp[e]
+            tmp[0] = event2word_cp["type_Metrical"]
+        elif event.name == "Chord":
+            tmp[2] = event2word_cp[e]
+            tmp[0] = event2word_cp["type_Metrical"]
+        elif event.name == "Tempo Value":
+            tmp[3] = event2word_cp[e]
+            tmp[0] = event2word_cp["type_Metrical"]
+        elif event.name == "Note On":
+            tmp[4] = event2word_cp[e]
+            tmp[0] = event2word_cp["type_note"]
+        elif event.name == "Note Duration":
+            tmp[5] = event2word_cp[e]
+            tmp[0] = event2word_cp["type_note"]
+        elif event.name == "Note Velocity":
+            tmp[6] = event2word_cp[e]
+            tmp[0] = event2word_cp["type_note"]
+
+        tmp = tmp.reshape(1, -1)
+        if idx == 0:
+            words = tmp
+        else:
+            words = np.concatenate((words, tmp))
+
+            if event.name == "Note Duration":
+                words[-1] = words[-1] + words[-2] + words[-3]
+                words[-1][0] = words[-1][0] / 3
+                words = np.delete(words, [-2, -3], axis=0)
+            elif event.name == "Tempo Value":
+                words[-1] = words[-1] + words[-2] + words[-3]
+                words[-1][0] = words[-1][0] / 3
+                words = np.delete(words, [-2, -3], axis=0)
+    return words

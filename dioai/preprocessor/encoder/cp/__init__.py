@@ -1,0 +1,4 @@
+"""
+compound words representation
+
+"""

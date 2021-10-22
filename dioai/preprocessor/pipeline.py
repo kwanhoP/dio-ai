@@ -6,7 +6,7 @@ from typing import List, Union
 from dioai.logger import logger
 
 from ..utils import dependency
-from .encoder import MetaEncoderFactory, MidiPerformanceEncoder, RemiEncoder
+from .encoder import CpEncoder, MetaEncoderFactory, MidiPerformanceEncoder, RemiEncoder
 from .parser import MetaParserFactory
 from .preprocessor import PreprocessorFactory
 
@@ -28,7 +28,11 @@ class PreprocessPipeline:
         *args,
         **kwargs,
     ):
-        ENCODER_MAP = {"remi": RemiEncoder(remi_resolution), "midi": MidiPerformanceEncoder()}
+        ENCODER_MAP = {
+            "remi": RemiEncoder(remi_resolution),
+            "midi": MidiPerformanceEncoder(),
+            "cp": CpEncoder(remi_resolution),
+        }
 
         meta_parser = MetaParserFactory().create(
             self.dataset_name,

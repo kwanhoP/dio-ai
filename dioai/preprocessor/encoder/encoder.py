@@ -14,7 +14,8 @@ from magenta.models.score2perf.music_encoders import (
 )
 from tensor2tensor.data_generators import text_encoder
 
-from dioai.preprocessor.encoder.remi import utils
+from dioai.preprocessor.encoder import utils
+from dioai.preprocessor.encoder.cp.constant import event2word_cp
 from dioai.preprocessor.encoder.remi.exceptions import InvalidMidiError
 from dioai.preprocessor.utils import get_inst_from_info, get_ts_from_info
 from dioai.preprocessor.utils.constants import (
@@ -347,15 +348,8 @@ class RemiEncoder:
         self.event2word, self.word2event = utils.mk_remi_map(resolution)
         self.event2word = utils.add_flat_chord2map(self.event2word)
         self.position_resolution = resolution
-        default_tick_per_bar = 3840
-        self.duration_bins = np.arange(
-            int(default_tick_per_bar / 4 / resolution),
-            3841,
-            int(default_tick_per_bar / 4 / resolution),
-            dtype=int,
-        )
 
-    def encode(self, midi_paths, sample_info=None):
+    def encode(self, midi_paths, sample_info=None, for_cp=False):
         mido_file = mido.MidiFile(midi_paths)
         mido_meta = mido_file.tracks[0]
         tick_per_beat = mido_file.ticks_per_beat
@@ -374,17 +368,27 @@ class RemiEncoder:
                 audio_key = "C"
         if denominator == 8:
             numerator = numerator / 2
+
         tick_per_bar = tick_per_beat * numerator
+        duration_bins = np.arange(
+            int(tick_per_bar / 4 / self.position_resolution),
+            tick_per_bar + 1,
+            int(tick_per_bar / 4 / self.position_resolution),
+            dtype=int,
+        )
+
         events = utils.extract_events(
             midi_paths,
             self.position_resolution,
-            self.duration_bins,
+            duration_bins,
             tick_per_bar=tick_per_bar,
             tick_per_beat=tick_per_beat,
             chord_progression=None if sample_info is None else chord_progression,
             audio_key=audio_key,
             use_backoffice_chord=False if sample_info is None else True,
         )
+        if for_cp:
+            return events
 
         words = []
         for event in events:
@@ -463,3 +467,17 @@ class RemiEncoder:
             DEFAULT_DURATION_BINS=self.duration_bins,
             beat_per_bar=beat_per_bar,
         )
+
+
+class CpEncoder(RemiEncoder):
+    name = "cp"
+
+    def __init__(self, resolution):
+        super().__init__(resolution)
+
+    def encode(self, midi_paths, sample_info=None, event2word_cp=event2word_cp):
+        events = super().encode(midi_paths, sample_info, for_cp=True)
+
+        event2word_cp = utils.add_flat_chord2map(event2word_cp)
+        cp_word = utils.events2compound_word(events, event2word_cp)
+        return cp_word

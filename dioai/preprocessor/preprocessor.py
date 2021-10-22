@@ -215,7 +215,7 @@ class RedditPreprocessor(BasePreprocessor):
                 except IndexError:  # chord_track이 제거 된 경우
                     continue
             midi_obj.save(f.name)
-            if self.note_sequence_encoder.name == "remi":
+            if self.note_sequence_encoder.name == "remi" or self.note_sequence_encoder.name == "cp":
                 note_seqence = np.array(self.note_sequence_encoder.encode(midi_path))
             else:
                 note_seqence = np.array(self.note_sequence_encoder.encode(f.name))
@@ -475,7 +475,9 @@ class PozalabsPreprocessor(BasePreprocessor):
                 except IndexError:  # chord_track이 제거 된 경우
                     continue
             midi_obj.save(f.name)
-            if self.note_sequence_encoder.name == "remi":  # remi encoder 노트 시퀀스에 코드 진행 정보를 할당하기 위해
+            if (
+                self.note_sequence_encoder.name == "remi" or self.note_sequence_encoder.name == "cp"
+            ):  # remi encoder 노트 시퀀스에 코드 진행 정보를 할당하기 위해
                 note_seqence = np.array(
                     self.note_sequence_encoder.encode(midi_path, sample_info=sample_info)
                 )
