@@ -29,13 +29,13 @@ def extract_events(
     audio_key=None,
     use_backoffice_chord=True,
 ):
-    note_items, tempo_items = read_items(input_path, tick_per_beat)
+    note_items, _ = read_items(input_path, tick_per_beat)
     max_time = note_items[-1].end
     if not use_backoffice_chord:
         chord_items = extract_chords(note_items)
-        items = chord_items + tempo_items + note_items
+        items = chord_items + note_items
     else:
-        items = tempo_items + note_items
+        items = note_items
     groups = group_items(items, max_time, ticks_per_bar=tick_per_bar)
     events = item2event(groups, position_resolution, duration_bins)
     if use_backoffice_chord:
@@ -598,7 +598,7 @@ def write_midi(
 def mk_remi_map(resolution):
     event = copy.deepcopy(constant.base_event)
     # resolution에 따른 duration과 position event 추가
-    for i in range(resolution * 4):
+    for i in range(resolution * 4 + 2):
         event.append(f"Note Duration_{i}")
     for i in range(1, resolution + 1):
         event.append(f"Position_{i}/{resolution}")

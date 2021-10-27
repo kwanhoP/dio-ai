@@ -26,7 +26,8 @@ MIDI_EXTENSIONS = (".mid", ".MID", ".midi", ".MIDI")
 KEY_SWITCH_VEL = 358
 NOTE_OFF_START = 129
 NOTE_OFF_END = 229
-REMI_META_OFFSET = 72
+REMI_META_OFFSET = 9
+META_CC_OFFSET = 6
 
 
 class OutputSubDirName(str, enum.Enum):
@@ -348,8 +349,11 @@ class RedditPreprocessor(BasePreprocessor):
     def _preprocess_midi(self, midi_path: Union[str, Path]):
         encoded_meta: List[Union[int, str]] = self._encode_meta(self._parse_meta(midi_path))
         if self.encoder_name == "remi":
-            encoded_meta = list(np.array(encoded_meta) + REMI_META_OFFSET)  # remi offset 조정
-        encoded_meta.append(constants.UNKNOWN)
+            encoded_meta = list(
+                np.array(encoded_meta)[:-META_CC_OFFSET] + REMI_META_OFFSET
+            )  # meta cc 정보 빼고, remi offset 조정
+        else:
+            encoded_meta.append(constants.UNKNOWN)
         encoded_meta: np.ndarray = np.array(encoded_meta, dtype=object)
         encoded_note_sequence = np.array(self.encode_note_sequence(midi_path), dtype=np.int16)
         return EncodingOutput(meta=encoded_meta, note_sequence=encoded_note_sequence)
@@ -641,8 +645,11 @@ class PozalabsPreprocessor(BasePreprocessor):
             else constants.UNKNOWN
         )
         if self.encoder_name == "remi":
-            encoded_meta = list(np.array(encoded_meta) + REMI_META_OFFSET)  # remi offset 조정
-        encoded_meta.append(chord_progression_md5)
+            encoded_meta = list(
+                np.array(encoded_meta)[:-META_CC_OFFSET] + REMI_META_OFFSET
+            )  # meta cc 정보 빼고, remi offset 조정
+        else:
+            encoded_meta.append(chord_progression_md5)
         encoded_meta: np.ndarray = np.array(encoded_meta, dtype=object)
         encoded_note_sequence = np.array(
             self.encode_note_sequence(midi_path, sample_info), dtype=np.int16

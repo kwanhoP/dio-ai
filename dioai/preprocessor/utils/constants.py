@@ -415,6 +415,7 @@ POZA_INST_MAP = {
     "xylophone": 2,
     "zither": 3,
     "orgel": 2,
+    "synth_brass": 5,
 }
 
 DEFAULT_GENRE = "cinematic"
