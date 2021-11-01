@@ -177,11 +177,12 @@ def sync_key_augment(chords, aug_key, origin_key):
         match = re.findall(r"([A-Z,#,b]+)", c)
         basic_chord.append(match[0])
 
+    chord_type = [c.replace(b, "") for c, b in zip(chords, basic_chord)]
     symbol_lst = [chord2symbol[c.lower()] for c in basic_chord]
 
-    origin_key_symbol = chord_lst.index(origin_key)
+    origin_key_symbol = chord2symbol[origin_key]
 
-    augment_key_symbol = chord_lst.index(aug_key)
+    augment_key_symbol = chord2symbol[aug_key]
 
     key_diff = origin_key_symbol - augment_key_symbol
     key_chage = abs(key_diff)
@@ -201,6 +202,7 @@ def sync_key_augment(chords, aug_key, origin_key):
             new_symbol_lst.append(new_s)
 
     new_chord_lst = [symbol2chord[s] for s in new_symbol_lst]
+    new_chord_lst = [c + t for c, t in zip(new_chord_lst, chord_type)]
     return new_chord_lst
 
 
