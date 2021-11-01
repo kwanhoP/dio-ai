@@ -840,7 +840,7 @@ def augment_data_map(
         for key_change in range(-NUM_KEY_AUGMENT, NUM_KEY_AUGMENT):
             augment_tmp_midi_pth = augment_by_key(midi_path, augmented_tmp_dir, key_change, data)
             if augment_tmp_midi_pth is not None:
-                for bpm_change in range(-NUM_BPM_AUGMENT, NUM_BPM_AUGMENT):
+                for bpm_change in range(-NUM_BPM_AUGMENT, NUM_BPM_AUGMENT+1): #닫힌 구간을 위한 +1
                     augment_by_bpm(augment_tmp_midi_pth, augmented_dir, bpm_change)
 
 
